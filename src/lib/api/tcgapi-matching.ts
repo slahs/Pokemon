@@ -63,6 +63,12 @@ export function normalizeCardNumber(value: string): string {
     .replace(/([a-z])0+(?=\d)/g, "$1");
 }
 
+function normalizeDate(value: string | null): string | null {
+  if (!value) return null;
+  const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+  return match?.[0] ?? (value.trim() || null);
+}
+
 function setScore(
   candidate: TcgApiSetCandidate,
   input: { name: string; releaseDate: string | null; cardCount: number | null },
@@ -72,11 +78,17 @@ function setScore(
   let score = 0;
 
   if (candidateName && candidateName === inputName) score += 100;
-  else if (candidateName && inputName && (candidateName.includes(inputName) || inputName.includes(candidateName))) {
+  else if (
+    candidateName &&
+    inputName &&
+    (candidateName.includes(inputName) || inputName.includes(candidateName))
+  ) {
     score += 35;
   }
 
-  if (input.releaseDate && candidate.releaseDate === input.releaseDate) score += 45;
+  const inputDate = normalizeDate(input.releaseDate);
+  const candidateDate = normalizeDate(candidate.releaseDate);
+  if (inputDate && candidateDate === inputDate) score += 45;
   if (input.cardCount !== null && candidate.cardCount === input.cardCount) score += 35;
 
   return score;

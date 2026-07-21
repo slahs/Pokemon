@@ -1,6 +1,7 @@
 import "server-only";
 import type { CardFinish } from "@/types";
 import {
+  normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
   pickTcgSet,
@@ -11,14 +12,22 @@ import {
 } from "@/lib/api/tcgapi-matching";
 
 const API_BASE = "https://api.tcgapi.dev/v1";
+const TCGDEX_BASE = "https://api.tcgdex.net/v2";
 const DAY = 60 * 60 * 24;
 
 function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
 }
 
 function objectOrNull(value: unknown): Record<string, unknown> | null {
@@ -46,6 +55,15 @@ async function fetchTcgJson(
   return response.json();
 }
 
+async function fetchPublicJson(url: string): Promise<unknown> {
+  const response = await fetch(url, {
+    next: { revalidate: DAY },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`Öffentliche Kartendaten antworteten mit HTTP ${response.status}.`);
+  return response.json();
+}
+
 function responseData(value: unknown): unknown {
   const root = objectOrNull(value);
   return root?.data ?? value;
@@ -54,12 +72,12 @@ function responseData(value: unknown): unknown {
 function responseHasMore(value: unknown): boolean {
   const root = objectOrNull(value);
   const meta = objectOrNull(root?.meta);
-  return meta?.has_more === true;
+  return meta?.has_more === true || meta?.hasMore === true;
 }
 
 async function fetchPokemonSets(): Promise<TcgApiSetCandidate[]> {
   const sets: TcgApiSetCandidate[] = [];
-  for (let page = 1; page <= 5; page++) {
+  for (let page = 1; page <= 10; page++) {
     const raw = await fetchTcgJson(`/games/pokemon/sets?per_page=100&page=${page}`, {
       authenticated: false,
       revalidate: DAY,
@@ -82,6 +100,58 @@ async function fetchPokemonSets(): Promise<TcgApiSetCandidate[]> {
     if (!responseHasMore(raw) || data.length === 0) break;
   }
   return sets;
+}
+
+type TcgDexSetHint = {
+  id: string;
+  name: string;
+  releaseDate: string | null;
+  cardCount: number | null;
+};
+
+function parseTcgdexSets(value: unknown): TcgDexSetHint[] {
+  const data = responseData(value);
+  if (!Array.isArray(data)) return [];
+
+  return data
+    .map((item): TcgDexSetHint | null => {
+      const row = objectOrNull(item);
+      const id = stringOrNull(row?.id);
+      const name = stringOrNull(row?.name);
+      if (!id || !name) return null;
+      const cardCount = objectOrNull(row?.cardCount);
+      return {
+        id,
+        name,
+        releaseDate: stringOrNull(row?.releaseDate),
+        cardCount: numberOrNull(cardCount?.total) ?? numberOrNull(cardCount?.official),
+      };
+    })
+    .filter((set): set is TcgDexSetHint => set !== null);
+}
+
+async function resolveTcgdexSetHint(setName: string): Promise<TcgDexSetHint | null> {
+  const [deRaw, enRaw] = await Promise.all([
+    fetchPublicJson(`${TCGDEX_BASE}/de/sets`).catch(() => null),
+    fetchPublicJson(`${TCGDEX_BASE}/en/sets`).catch(() => null),
+  ]);
+  const deSets = parseTcgdexSets(deRaw);
+  const enSets = parseTcgdexSets(enRaw);
+  const targetName = normalizeComparableText(setName);
+
+  const primary =
+    deSets.find((set) => normalizeComparableText(set.name) === targetName) ??
+    enSets.find((set) => normalizeComparableText(set.name) === targetName) ??
+    null;
+  if (!primary) return null;
+
+  const english = enSets.find((set) => set.id === primary.id) ?? null;
+  return {
+    id: primary.id,
+    name: english?.name ?? primary.name,
+    releaseDate: primary.releaseDate ?? english?.releaseDate ?? null,
+    cardCount: primary.cardCount ?? english?.cardCount ?? null,
+  };
 }
 
 async function fetchSetCards(setId: number): Promise<TcgApiCardCandidate[]> {
@@ -160,11 +230,26 @@ export async function lookupTcgMarketPrice(input: {
   if (!process.env.TCGAPI_KEY?.trim()) return { status: "missing-key", quote: null };
 
   const sets = await fetchPokemonSets();
-  const set = pickTcgSet(sets, {
+  let set = pickTcgSet(sets, {
     name: input.setName,
     releaseDate: input.releaseDate,
     cardCount: input.cardCount,
   });
+
+  // Die Oberfläche arbeitet bevorzugt mit deutschen TCGdex-Namen. Falls die
+  // Metadaten nicht vom Client mitgegeben wurden, wird das Set über die
+  // deutsche TCGdex-Liste aufgelöst und mit dem englischen Namen erneut gesucht.
+  if (!set) {
+    const hint = await resolveTcgdexSetHint(input.setName);
+    if (hint) {
+      set = pickTcgSet(sets, {
+        name: hint.name,
+        releaseDate: input.releaseDate ?? hint.releaseDate,
+        cardCount: input.cardCount ?? hint.cardCount,
+      });
+    }
+  }
+
   if (!set) return { status: "set-not-found", quote: null };
 
   const cards = await fetchSetCards(set.id);

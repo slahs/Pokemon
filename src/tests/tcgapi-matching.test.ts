@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeCardNumber,
+  normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
   pickTcgSet,
@@ -13,6 +14,10 @@ describe("TCG API Zuordnung", () => {
     expect(normalizeCardNumber("SVP 001")).toBe("svp1");
   });
 
+  it("normalisiert Satzzeichen und Sonderzeichen in Setnamen", () => {
+    expect(normalizeComparableText("Scarlet & Violet—151")).toBe("scarletandviolet151");
+  });
+
   it("findet ein englisches Set ueber Release-Datum und Kartenanzahl", () => {
     const result = pickTcgSet(
       [
@@ -20,6 +25,14 @@ describe("TCG API Zuordnung", () => {
         { id: 2, name: "Temporal Forces", releaseDate: "2024-03-22", cardCount: 218 },
       ],
       { name: "Paldeas Schicksale", releaseDate: "2024-01-26", cardCount: 245 },
+    );
+    expect(result?.id).toBe(1);
+  });
+
+  it("vergleicht ISO-Zeitstempel mit reinen Release-Daten", () => {
+    const result = pickTcgSet(
+      [{ id: 1, name: "Paldean Fates", releaseDate: "2024-01-26T00:00:00.000Z", cardCount: 245 }],
+      { name: "Paldeas Schicksale", releaseDate: "2024-01-26", cardCount: null },
     );
     expect(result?.id).toBe(1);
   });
