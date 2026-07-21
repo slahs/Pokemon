@@ -23,6 +23,8 @@ export type TcgApiPriceCandidate = {
   updatedAt: string | null;
 };
 
+export type TcgApiSearchCandidate = TcgApiCardCandidate & TcgApiPriceCandidate;
+
 export type TcgMarketQuote = {
   marketUsd: number | null;
   lowUsd: number | null;
@@ -105,7 +107,6 @@ export function pickTcgSet(
   const best = ranked[0];
   if (!best || best.score < 45) return null;
 
-  // Bei einem reinen Datums-Treffer darf kein gleichwertiger Kandidat existieren.
   const second = ranked[1];
   if (second && second.score === best.score && best.score < 100) return null;
   return best.candidate;
@@ -136,6 +137,14 @@ function canonicalPrinting(value: string | null): "Normal" | "Foil" | null {
   return null;
 }
 
+function hasPrice(candidate: TcgApiPriceCandidate): boolean {
+  return (
+    candidate.marketPrice !== null ||
+    candidate.lowPrice !== null ||
+    candidate.medianPrice !== null
+  );
+}
+
 export function pickTcgPrice(
   candidates: TcgApiPriceCandidate[],
   finish: CardFinish,
@@ -144,26 +153,58 @@ export function pickTcgPrice(
   if (candidates.length === 0) return null;
   const preferred: "Normal" | "Foil" = finish === "normal" ? "Normal" : "Foil";
   const selected =
-    candidates.find((candidate) => canonicalPrinting(candidate.printing) === preferred) ??
-    candidates.find((candidate) => candidate.marketPrice !== null || candidate.lowPrice !== null) ??
+    candidates.find(
+      (candidate) => canonicalPrinting(candidate.printing) === preferred && hasPrice(candidate),
+    ) ??
+    candidates.find((candidate) => hasPrice(candidate)) ??
     candidates[0];
 
-  if (!selected) return null;
-  const printing = canonicalPrinting(selected.printing);
-  if (
-    selected.marketPrice === null &&
-    selected.lowPrice === null &&
-    selected.medianPrice === null
-  ) {
-    return null;
-  }
+  if (!selected || !hasPrice(selected)) return null;
 
   return {
     marketUsd: selected.marketPrice,
     lowUsd: selected.lowPrice,
     medianUsd: selected.medianPrice,
-    printing,
+    printing: canonicalPrinting(selected.printing),
     updatedAt: selected.updatedAt,
     tcgplayerUrl,
+  };
+}
+
+export function pickTcgSearchQuote(
+  candidates: TcgApiSearchCandidate[],
+  input: { localId: string; englishName: string; finish: CardFinish },
+): TcgMarketQuote | null {
+  const targetNumber = normalizeCardNumber(input.localId);
+  const targetName = normalizeComparableText(input.englishName);
+  const preferred: "Normal" | "Foil" = input.finish === "normal" ? "Normal" : "Foil";
+
+  const ranked = candidates
+    .filter((candidate) => normalizeCardNumber(candidate.number) === targetNumber)
+    .filter(
+      (candidate) =>
+        !candidate.productType || candidate.productType.toLocaleLowerCase("en") === "cards",
+    )
+    .map((candidate) => {
+      let score = 0;
+      const candidateName = normalizeComparableText(candidate.name);
+      if (candidateName === targetName) score += 100;
+      else if (candidateName.includes(targetName) || targetName.includes(candidateName)) score += 30;
+      if (canonicalPrinting(candidate.printing) === preferred) score += 20;
+      if (hasPrice(candidate)) score += 10;
+      return { candidate, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected = ranked[0]?.candidate;
+  if (!selected || !hasPrice(selected)) return null;
+
+  return {
+    marketUsd: selected.marketPrice,
+    lowUsd: selected.lowPrice,
+    medianUsd: selected.medianPrice,
+    printing: canonicalPrinting(selected.printing),
+    updatedAt: selected.updatedAt,
+    tcgplayerUrl: selected.tcgplayerUrl,
   };
 }
