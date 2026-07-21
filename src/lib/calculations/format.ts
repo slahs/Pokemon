@@ -1,4 +1,9 @@
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const usd = new Intl.NumberFormat("de-DE", {
+  style: "currency",
+  currency: "USD",
+  currencyDisplay: "narrowSymbol",
+});
 const pct = new Intl.NumberFormat("de-DE", {
   style: "percent",
   minimumFractionDigits: 1,
@@ -7,6 +12,10 @@ const pct = new Intl.NumberFormat("de-DE", {
 
 export function formatEur(value: number | null): string {
   return value === null ? "–" : eur.format(value);
+}
+
+export function formatUsd(value: number | null): string {
+  return value === null ? "–" : usd.format(value);
 }
 
 /** value als Prozentzahl, z. B. 12.5 fuer 12,5 % */
