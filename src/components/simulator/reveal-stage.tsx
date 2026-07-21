@@ -30,8 +30,8 @@ export function RevealStage(props: {
   booster: NormalizedBoosterArtwork | null;
   setLogo: string | null;
   setName: string;
-  setReleaseDate: string | null;
-  setCardCount: number | null;
+  setReleaseDate?: string | null;
+  setCardCount?: number | null;
 }) {
   const { cards, revealedCount, opening, onOpened, onReveal, animationsEnabled } = props;
   const current = revealedCount > 0 ? (cards[revealedCount - 1] ?? null) : null;
