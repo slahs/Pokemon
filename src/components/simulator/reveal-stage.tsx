@@ -8,14 +8,11 @@ import { formatEur } from "@/lib/calculations/format";
 import { PRICE_FIELD_LABELS } from "@/lib/pricing/resolve-card-price";
 import type { NormalizedBoosterArtwork, PriceVariants } from "@/types";
 import { PokemonCardBack } from "@/components/cards/pokemon-card-back";
+import { RarityCardSurface } from "@/components/cards/rarity-card-surface";
 import { BoosterPack } from "@/components/simulator/booster-pack";
 import { TcgMarketPrice } from "@/components/simulator/tcg-market-price";
 
 const FINISH_LABELS = { normal: "Normal", reverse: "Reverse Holo", holo: "Holo" } as const;
-
-function isHighValue(card: RevealCard): boolean {
-  return (card.price ?? 0) >= 5 || (!card.isBulk && card.finish === "holo");
-}
 
 export function RevealStage(props: {
   cards: RevealCard[];
@@ -25,6 +22,7 @@ export function RevealStage(props: {
   onReveal: () => void;
   onRevealAll: () => void;
   onSkipBulk: () => void;
+  onFinish: () => void;
   onCancel: () => void;
   animationsEnabled: boolean;
   booster: NormalizedBoosterArtwork | null;
@@ -36,7 +34,7 @@ export function RevealStage(props: {
   const { cards, revealedCount, opening, onOpened, onReveal, animationsEnabled } = props;
   const current = revealedCount > 0 ? (cards[revealedCount - 1] ?? null) : null;
   const next = cards[revealedCount] ?? null;
-  const done = revealedCount >= cards.length;
+  const done = cards.length > 0 && revealedCount >= cards.length;
   const stageRef = useRef<HTMLDivElement>(null);
   const dragStarted = useRef(false);
   const dragControls = useAnimationControls();
@@ -56,15 +54,16 @@ export function RevealStage(props: {
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        if (!done && !opening) onReveal();
-      }
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (opening) return;
+      if (done) props.onFinish();
+      else onReveal();
     };
     el.addEventListener("keydown", handler);
     return () => el.removeEventListener("keydown", handler);
-  }, [done, opening, onReveal]);
+  }, [done, opening, onReveal, props.onFinish]);
 
   async function dismissCard(info: PanInfo) {
     if (done) return;
@@ -149,7 +148,7 @@ export function RevealStage(props: {
     <section
       ref={stageRef}
       tabIndex={0}
-      aria-label="Booster-Bühne. Ziehe die Karte mit Maus oder Finger zur Seite. Enter oder Leertaste deckt die nächste Karte auf."
+      aria-label="Booster-Bühne. Ziehe die Karte mit Maus oder Finger zur Seite. Enter oder Leertaste deckt die nächste Karte auf beziehungsweise öffnet nach der letzten Karte die Auswertung."
       className="screen-rise mt-8 outline-none"
     >
       <p className="mb-5 text-center font-numeric text-sm text-text-muted">
@@ -237,17 +236,16 @@ export function RevealStage(props: {
                   </p>
                 )}
                 <TcgMarketPrice
+                  cardId={current.cardId}
                   setName={props.setName}
                   releaseDate={props.setReleaseDate}
                   cardCount={props.setCardCount}
                   localId={current.localId}
                   finish={current.finish}
                 />
-                {!done && (
-                  <p className="pt-2 text-center font-numeric text-[0.68rem] uppercase tracking-[0.12em] text-text-dim">
-                    Karte zur Seite ziehen
-                  </p>
-                )}
+                <p className="pt-2 text-center font-numeric text-[0.68rem] uppercase tracking-[0.12em] text-text-dim">
+                  {done ? "Letzte Karte · in Ruhe ansehen" : "Karte zur Seite ziehen"}
+                </p>
               </motion.figcaption>
             </motion.figure>
           </div>
@@ -289,30 +287,40 @@ export function RevealStage(props: {
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[oklch(0.16_0.045_275/0.95)] backdrop-blur sm:static sm:mt-1 sm:border-0 sm:bg-transparent sm:backdrop-blur-none">
         <div className="mx-auto flex max-w-[1120px] flex-wrap justify-center gap-2 px-4 py-3 sm:gap-3 sm:py-6">
-          <button
-            type="button"
-            onClick={onReveal}
-            disabled={done}
-            className="accent-button min-h-11 px-5 text-sm disabled:opacity-40"
-          >
-            Nächste Karte
-          </button>
-          <button
-            type="button"
-            onClick={props.onRevealAll}
-            disabled={done}
-            className="outline-button min-h-11 px-5 text-sm disabled:opacity-40"
-          >
-            Alle aufdecken
-          </button>
-          <button
-            type="button"
-            onClick={props.onSkipBulk}
-            disabled={done || !next?.isBulk}
-            className="outline-button min-h-11 px-5 text-sm disabled:opacity-40"
-          >
-            Bulk überspringen
-          </button>
+          {done ? (
+            <button
+              type="button"
+              onClick={props.onFinish}
+              className="accent-button min-h-11 px-7 text-sm"
+            >
+              Pack auswerten
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onReveal}
+                className="accent-button min-h-11 px-5 text-sm"
+              >
+                Nächste Karte
+              </button>
+              <button
+                type="button"
+                onClick={props.onRevealAll}
+                className="outline-button min-h-11 px-5 text-sm"
+              >
+                Alle aufdecken
+              </button>
+              <button
+                type="button"
+                onClick={props.onSkipBulk}
+                disabled={!next?.isBulk}
+                className="outline-button min-h-11 px-5 text-sm disabled:opacity-40"
+              >
+                Bulk überspringen
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={props.onCancel}
@@ -327,28 +335,29 @@ export function RevealStage(props: {
 }
 
 function CardImage({ card }: { card: RevealCard }) {
-  const highValue = isHighValue(card);
   return (
-    <div
-      className={`absolute inset-0 overflow-hidden rounded-[18px] border border-white/16 bg-panel-solid shadow-[0_18px_45px_-20px_oklch(0.05_0.04_275/0.9)] [backface-visibility:hidden] ${
-        highValue ? "holo-glow holo-sheen" : ""
-      }`}
+    <RarityCardSurface
+      rarity={card.rarity}
+      finish={card.finish}
+      className="absolute inset-0 rounded-[18px] [backface-visibility:hidden]"
     >
-      {card.imageHigh ? (
-        <Image
-          src={card.imageHigh}
-          alt={`Karte ${card.name}`}
-          width={600}
-          height={825}
-          className="h-full w-full object-contain"
-          priority
-          unoptimized
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-text-dim">
-          Kein Kartenbild verfügbar
-        </div>
-      )}
-    </div>
+      <div className="h-full overflow-hidden rounded-[18px] border border-white/16 bg-panel-solid shadow-[0_18px_45px_-20px_oklch(0.05_0.04_275/0.9)]">
+        {card.imageHigh ? (
+          <Image
+            src={card.imageHigh}
+            alt={`Karte ${card.name}`}
+            width={600}
+            height={825}
+            className="h-full w-full object-contain"
+            priority
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-text-dim">
+            Kein Kartenbild verfügbar
+          </div>
+        )}
+      </div>
+    </RarityCardSurface>
   );
 }
