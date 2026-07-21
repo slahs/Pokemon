@@ -4,6 +4,7 @@ import {
   normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
+  pickTcgSearchQuote,
   pickTcgSet,
 } from "@/lib/api/tcgapi-matching";
 
@@ -76,5 +77,41 @@ describe("TCG API Zuordnung", () => {
     );
     expect(quote?.printing).toBe("Foil");
     expect(quote?.marketUsd).toBe(2);
+  });
+
+  it("findet Inkay 051 in der Suche und ignoriert Sondervarianten", () => {
+    const quote = pickTcgSearchQuote(
+      [
+        {
+          id: 1,
+          name: "Inkay (Poke Ball Pattern)",
+          number: "051/084",
+          productType: "Cards",
+          tcgplayerUrl: "https://example.test/pokeball",
+          printing: "Foil",
+          marketPrice: 2,
+          lowPrice: 1.5,
+          medianPrice: 2.2,
+          updatedAt: "2026-07-21",
+        },
+        {
+          id: 2,
+          name: "Inkay",
+          number: "051/084",
+          productType: "Cards",
+          tcgplayerUrl: "https://example.test/normal",
+          printing: "Normal",
+          marketPrice: null,
+          lowPrice: 0.59,
+          medianPrice: null,
+          updatedAt: "2026-07-21",
+        },
+      ],
+      { localId: "051", englishName: "Inkay", finish: "normal" },
+    );
+
+    expect(quote?.printing).toBe("Normal");
+    expect(quote?.lowUsd).toBe(0.59);
+    expect(quote?.tcgplayerUrl).toBe("https://example.test/normal");
   });
 });
