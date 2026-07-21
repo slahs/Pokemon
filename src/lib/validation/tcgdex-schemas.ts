@@ -27,7 +27,20 @@ export const tcgdexCardBriefSchema = z.object({
   image: z.string().optional().nullable(),
 });
 
+export const tcgdexBoosterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  logo: z.string().optional().nullable(),
+  artwork_front: z.string().optional().nullable(),
+  artwork_back: z.string().optional().nullable(),
+});
+
 export const tcgdexSetDetailSchema = tcgdexSetBriefSchema.extend({
+  boosters: z
+    .array(tcgdexBoosterSchema)
+    .optional()
+    .nullable()
+    .transform((v) => v ?? []),
   cards: z.array(tcgdexCardBriefSchema).default([]),
 });
 
@@ -60,9 +73,7 @@ export const tcgdexCardDetailSchema = z
     image: z.string().optional().nullable(),
     category: z.string().optional().nullable(),
     rarity: z.string().optional().nullable(),
-    set: z
-      .object({ id: z.string(), name: z.string().optional() })
-      .optional(),
+    set: z.object({ id: z.string(), name: z.string().optional() }).optional(),
     variants: z
       .object({
         normal: z.boolean().optional(),

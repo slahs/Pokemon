@@ -25,7 +25,7 @@ describe("Simulationsprofile", () => {
     expect(findProfileForSet("base1")?.id).toBe("vintage");
   });
 
-  it("unbekannte Sets erhalten kein Profil", () => {
-    expect(findProfileForSet("xy12")).toBeNull();
+  it("unbekannte Sets erhalten das generische Fallback-Profil", () => {
+    expect(findProfileForSet("xy12")?.id).toBe("generic-estimated");
   });
 });

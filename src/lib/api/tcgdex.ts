@@ -17,9 +17,14 @@ const BASE = APP_CONFIG.tcgdexBaseUrl;
  */
 export async function fetchSets(): Promise<NormalizedSetSummary[]> {
   const revalidateSeconds = APP_CONFIG.cache.setsSeconds;
+  const sortedSetsQuery = "?sort:field=releaseDate&sort:order=DESC";
   const [deRaw, enRaw] = await Promise.all([
-    fetchJsonWithRetry(`${BASE}/de/sets`, { revalidateSeconds }).catch(() => null),
-    fetchJsonWithRetry(`${BASE}/en/sets`, { revalidateSeconds }).catch(() => null),
+    fetchJsonWithRetry(`${BASE}/de/sets${sortedSetsQuery}`, { revalidateSeconds }).catch(
+      () => null,
+    ),
+    fetchJsonWithRetry(`${BASE}/en/sets${sortedSetsQuery}`, { revalidateSeconds }).catch(
+      () => null,
+    ),
   ]);
 
   const parsedDe = tcgdexSetListSchema.safeParse(deRaw);
@@ -29,13 +34,13 @@ export async function fetchSets(): Promise<NormalizedSetSummary[]> {
     const englishById = new Map(
       parsedEn.success ? parsedEn.data.map((set) => [set.id, set] as const) : [],
     );
-    return parsedDe.data.map((set) =>
-      normalizeSetSummary(set, "de", englishById.get(set.id) ?? null),
+    return parsedDe.data.map((set, index) =>
+      normalizeSetSummary(set, "de", englishById.get(set.id) ?? null, index),
     );
   }
 
   if (parsedEn.success) {
-    return parsedEn.data.map((set) => normalizeSetSummary(set, "en"));
+    return parsedEn.data.map((set, index) => normalizeSetSummary(set, "en", null, index));
   }
 
   return [];

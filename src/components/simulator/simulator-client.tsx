@@ -14,6 +14,7 @@ import { loadSession } from "@/lib/storage/session-storage";
 import { StatsBar } from "@/components/statistics/stats-bar";
 import { RevealStage } from "@/components/simulator/reveal-stage";
 import { BoosterSummary } from "@/components/simulator/booster-summary";
+import { BoosterPack } from "@/components/simulator/booster-pack";
 import type { BoosterRecord, SetPoolResponse } from "@/types";
 
 type Phase = "loading" | "error" | "ready" | "opening" | "revealing" | "summary";
@@ -32,6 +33,7 @@ export function SimulatorClient({ setId }: { setId: string }) {
   const [record, setRecord] = useState<BoosterRecord | null>(null);
   const [sessionNet, setSessionNet] = useState(0);
   const [packPriceInput, setPackPriceInput] = useState("");
+  const [boosterIndex, setBoosterIndex] = useState(0);
 
   const liveRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +64,9 @@ export function SimulatorClient({ setId }: { setId: string }) {
       .then((data) => {
         if (cancelled) return;
         setPool(data);
+        setBoosterIndex(
+          data.set.boosters.length > 0 ? Math.floor(Math.random() * data.set.boosters.length) : 0,
+        );
         setPhase("ready");
       })
       .catch((err: Error) => {
@@ -153,6 +158,12 @@ export function SimulatorClient({ setId }: { setId: string }) {
         setSessionNet((s) => s + rec.netProfitLoss);
       }
       setPhase("summary");
+      if (pool.set.boosters.length > 1) {
+        setBoosterIndex((current) => {
+          const next = Math.floor(Math.random() * pool.set.boosters.length);
+          return next === current ? (next + 1) % pool.set.boosters.length : next;
+        });
+      }
       announce(
         `Booster ausgewertet. Kartenwert ${formatEur(rec.grossCardValue)}, Nettoergebnis ${formatEur(rec.netProfitLoss)}.`,
       );
@@ -220,6 +231,7 @@ export function SimulatorClient({ setId }: { setId: string }) {
   }, [phase, settings.autoReveal, revealedCount, cards.length, revealNext]);
 
   const revealedCards = cards.slice(0, revealedCount);
+  const selectedBooster = pool?.set.boosters[boosterIndex] ?? null;
   const liveProfit = useMemo(
     () =>
       calculateProfit({
@@ -252,39 +264,36 @@ export function SimulatorClient({ setId }: { setId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-28 sm:pb-10">
+    <div className="screen-rise mx-auto max-w-[1120px] px-4 pb-28 sm:px-7 sm:pb-10">
       <div ref={liveRef} aria-live="polite" className="sr-only" />
 
       {/* Kopfbereich */}
-      <header className="py-6 flex flex-wrap items-center gap-4">
+      <header className="flex flex-wrap items-center gap-4 py-8">
         {pool?.set.logo && (
           <Image
             src={pool.set.logo}
             alt=""
             width={150}
             height={56}
-            className="h-12 w-auto object-contain"
+            className="h-12 w-auto max-w-[150px] object-contain"
             unoptimized
           />
         )}
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-semibold truncate">
+          <h1 className="truncate font-display text-2xl font-bold">
             {pool?.set.name ?? "Set wird geladen …"}
           </h1>
-          <p className="text-sm text-mist-500">
+          <p className="text-sm text-text-muted">
             {pool?.set.serie ?? ""} · Profil: {profile.name}
           </p>
         </div>
-        <Link
-          href="/#sets"
-          className="ml-auto rounded-lg border border-ink-600 px-3.5 py-2 min-h-11 inline-flex items-center text-sm hover:border-foil-400"
-        >
+        <Link href="/#sets" className="outline-button ml-auto min-h-11 px-4 text-sm">
           Anderes Set
         </Link>
       </header>
 
       {profile.confidence === "estimated" && (
-        <p className="mb-4 text-sm text-warn-300 bg-ink-900 border border-ink-700 rounded-lg px-3 py-2">
+        <p className="mb-5 rounded-xl border border-warn/30 bg-[oklch(0.5_0.12_80/0.14)] px-4 py-2.5 text-sm text-warn">
           {profile.disclaimer ?? "Geschätztes Simulationsmodell – keine offiziellen Pull Rates."}
         </p>
       )}
@@ -309,8 +318,8 @@ export function SimulatorClient({ setId }: { setId: string }) {
         <div className="panel mt-6 p-10 text-center" aria-busy="true">
           <div className="mx-auto h-56 w-40 card-back rounded-xl animate-pulse" />
           <p className="mt-4 text-mist-500">
-            Kartenpool und Marktpreise werden geladen … Beim ersten Aufruf eines Sets kann das
-            einen Moment dauern.
+            Kartenpool und Marktpreise werden geladen … Beim ersten Aufruf eines Sets kann das einen
+            Moment dauern.
           </p>
         </div>
       )}
@@ -330,34 +339,27 @@ export function SimulatorClient({ setId }: { setId: string }) {
       )}
 
       {phase === "ready" && pool && (
-        <section className="mt-8 grid gap-8 lg:grid-cols-[1fr_20rem] items-start">
-          <div className="panel p-8 flex flex-col items-center text-center">
-            <div className="relative w-44 sm:w-52 aspect-[5/8] card-back rounded-xl overflow-hidden flex flex-col items-center justify-center gap-3 p-4">
-              <div className="foil-seam w-full absolute top-10" aria-hidden="true" />
-              {pool.set.logo && (
-                <Image
-                  src={pool.set.logo}
-                  alt=""
-                  width={140}
-                  height={52}
-                  className="w-4/5 h-auto object-contain"
-                  unoptimized
-                />
-              )}
-              <span className="text-[0.65rem] uppercase tracking-[0.25em] text-mist-500">
-                Simulierter Booster
-              </span>
-            </div>
+        <section className="mt-8 grid items-start gap-7 lg:grid-cols-[1fr_20rem]">
+          <div className="panel flex flex-col items-center p-8 text-center sm:p-11">
+            <BoosterPack
+              booster={selectedBooster}
+              setLogo={pool.set.logo}
+              setName={pool.set.name}
+              className="pack-float w-44 sm:w-52"
+            />
+            {selectedBooster?.name && (
+              <p className="mt-3 font-numeric text-xs text-text-dim">{selectedBooster.name}</p>
+            )}
             <button
               type="button"
               onClick={startBooster}
-              className="mt-7 rounded-xl bg-foil-400 text-ink-950 px-8 py-3 min-h-12 text-base font-semibold hover:bg-foil-300"
+              className="accent-button mt-7 min-h-12 px-10 text-base"
             >
               Booster öffnen
             </button>
           </div>
 
-          <aside className="panel p-5 space-y-4">
+          <aside className="panel space-y-4 p-6">
             <h2 className="font-medium">Vor dem Öffnen</h2>
             <label className="block text-sm">
               <span className="text-mist-300">Booster-Kaufpreis (€)</span>
@@ -365,7 +367,7 @@ export function SimulatorClient({ setId }: { setId: string }) {
                 inputMode="decimal"
                 value={packPriceInput}
                 onChange={(e) => setPackPriceInput(e.target.value)}
-                className="mt-1 w-full rounded-lg bg-ink-800 border border-ink-600 px-3 py-2.5 min-h-11 num"
+                className="mt-2 min-h-11 w-full rounded-xl border border-white/16 bg-input px-4 py-2.5 font-numeric"
                 aria-describedby="price-hint"
               />
               <span id="price-hint" className="text-xs text-mist-500">
@@ -390,6 +392,9 @@ export function SimulatorClient({ setId }: { setId: string }) {
           onSkipBulk={skipBulk}
           onCancel={cancelBooster}
           animationsEnabled={settings.animationsEnabled && !settings.reducedAnimations}
+          booster={selectedBooster}
+          setLogo={pool.set.logo}
+          setName={pool.set.name}
         />
       )}
 
