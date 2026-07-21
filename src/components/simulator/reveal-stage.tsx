@@ -9,6 +9,7 @@ import { PRICE_FIELD_LABELS } from "@/lib/pricing/resolve-card-price";
 import type { NormalizedBoosterArtwork, PriceVariants } from "@/types";
 import { PokemonCardBack } from "@/components/cards/pokemon-card-back";
 import { BoosterPack } from "@/components/simulator/booster-pack";
+import { TcgMarketPrice } from "@/components/simulator/tcg-market-price";
 
 const FINISH_LABELS = { normal: "Normal", reverse: "Reverse Holo", holo: "Holo" } as const;
 
@@ -29,6 +30,8 @@ export function RevealStage(props: {
   booster: NormalizedBoosterArtwork | null;
   setLogo: string | null;
   setName: string;
+  setReleaseDate?: string | null;
+  setCardCount?: number | null;
 }) {
   const { cards, revealedCount, opening, onOpened, onReveal, animationsEnabled } = props;
   const current = revealedCount > 0 ? (cards[revealedCount - 1] ?? null) : null;
@@ -225,7 +228,7 @@ export function RevealStage(props: {
                 </p>
                 {current.price !== null && (
                   <p className="text-xs leading-relaxed text-text-dim">
-                    Basis:{" "}
+                    Cardmarket-Basis:{" "}
                     {current.usedField
                       ? PRICE_FIELD_LABELS[current.usedField as keyof PriceVariants]
                       : "–"}
@@ -233,6 +236,13 @@ export function RevealStage(props: {
                     {current.updatedAt ? ` · Stand: ${current.updatedAt}` : ""}
                   </p>
                 )}
+                <TcgMarketPrice
+                  setName={props.setName}
+                  releaseDate={props.setReleaseDate}
+                  cardCount={props.setCardCount}
+                  localId={current.localId}
+                  finish={current.finish}
+                />
                 {!done && (
                   <p className="pt-2 text-center font-numeric text-[0.68rem] uppercase tracking-[0.12em] text-text-dim">
                     Karte zur Seite ziehen
