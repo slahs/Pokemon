@@ -13,10 +13,30 @@ type LoadState =
   | { status: TcgMarketLookupResponse["status"]; quote: TcgMarketQuote | null }
   | { status: "error"; quote: null };
 
+type SetMetadata = {
+  name: string;
+  releaseDate: string | null;
+  cardCountOfficial: number | null;
+  cardCountTotal: number | null;
+};
+
+let setMetadataPromise: Promise<SetMetadata[]> | null = null;
+
+function loadSetMetadata(): Promise<SetMetadata[]> {
+  setMetadataPromise ??= fetch("/api/sets")
+    .then(async (response) => {
+      if (!response.ok) return [];
+      const body = (await response.json()) as { sets?: SetMetadata[] };
+      return body.sets ?? [];
+    })
+    .catch(() => []);
+  return setMetadataPromise;
+}
+
 export function TcgMarketPrice(props: {
   setName: string;
-  releaseDate: string | null;
-  cardCount: number | null;
+  releaseDate?: string | null;
+  cardCount?: number | null;
   localId: string;
   finish: CardFinish;
 }) {
@@ -26,22 +46,35 @@ export function TcgMarketPrice(props: {
     const controller = new AbortController();
     setState({ status: "loading", quote: null });
 
-    fetch("/api/tcg-market", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(props),
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("TCG-Marktpreis konnte nicht geladen werden.");
-        return response.json() as Promise<TcgMarketLookupResponse>;
-      })
-      .then((result) => {
-        if (!controller.signal.aborted) setState(result);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setState({ status: "error", quote: null });
+    void (async () => {
+      let releaseDate = props.releaseDate ?? null;
+      let cardCount = props.cardCount ?? null;
+
+      if (!releaseDate || cardCount === null) {
+        const sets = await loadSetMetadata();
+        const set = sets.find((candidate) => candidate.name === props.setName);
+        releaseDate ??= set?.releaseDate ?? null;
+        cardCount ??= set?.cardCountTotal ?? set?.cardCountOfficial ?? null;
+      }
+
+      const response = await fetch("/api/tcg-market", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setName: props.setName,
+          releaseDate,
+          cardCount,
+          localId: props.localId,
+          finish: props.finish,
+        }),
+        signal: controller.signal,
       });
+      if (!response.ok) throw new Error("TCG-Marktpreis konnte nicht geladen werden.");
+      const result = (await response.json()) as TcgMarketLookupResponse;
+      if (!controller.signal.aborted) setState(result);
+    })().catch(() => {
+      if (!controller.signal.aborted) setState({ status: "error", quote: null });
+    });
 
     return () => controller.abort();
   }, [props.setName, props.releaseDate, props.cardCount, props.localId, props.finish]);
