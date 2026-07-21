@@ -11,6 +11,7 @@ function isFinish(value: unknown): value is CardFinish {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
+    const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";
     const setName = typeof body.setName === "string" ? body.setName.trim() : "";
     const releaseDate = typeof body.releaseDate === "string" ? body.releaseDate : null;
     const cardCount =
@@ -18,11 +19,12 @@ export async function POST(request: Request) {
     const localId = typeof body.localId === "string" ? body.localId.trim() : "";
     const finish = body.finish;
 
-    if (!setName || !localId || !isFinish(finish)) {
+    if (!cardId || !setName || !localId || !isFinish(finish)) {
       return NextResponse.json({ error: "Ungültige Marktpreis-Anfrage." }, { status: 400 });
     }
 
     const result = await lookupTcgMarketPrice({
+      cardId,
       setName,
       releaseDate,
       cardCount,
