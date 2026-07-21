@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { APP_CONFIG } from "@/config/app-config";
 import { formatEur, formatPercent } from "@/lib/calculations/format";
@@ -44,13 +43,10 @@ export function BoosterSummary({
               >
                 <div className="aspect-[5/7] rounded-lg overflow-hidden bg-ink-800">
                   {card.imageLow ? (
-                    <Image
+                    <img
                       src={card.imageLow}
                       alt={`Karte ${card.name}`}
-                      width={180}
-                      height={252}
                       className="w-full h-full object-contain"
-                      unoptimized
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-xs text-mist-500">

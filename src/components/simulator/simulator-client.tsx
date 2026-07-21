@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { findProfileForSet } from "@/config/simulation-profiles";
 import { openBooster, buildBoosterRecord, type RevealCard } from "@/lib/simulation/booster-service";
@@ -258,13 +257,10 @@ export function SimulatorClient({ setId }: { setId: string }) {
       {/* Kopfbereich */}
       <header className="py-6 flex flex-wrap items-center gap-4">
         {pool?.set.logo && (
-          <Image
+          <img
             src={pool.set.logo}
             alt=""
-            width={150}
-            height={56}
             className="h-12 w-auto object-contain"
-            unoptimized
           />
         )}
         <div className="min-w-0">
@@ -335,13 +331,10 @@ export function SimulatorClient({ setId }: { setId: string }) {
             <div className="relative w-44 sm:w-52 aspect-[5/8] card-back rounded-xl overflow-hidden flex flex-col items-center justify-center gap-3 p-4">
               <div className="foil-seam w-full absolute top-10" aria-hidden="true" />
               {pool.set.logo && (
-                <Image
+                <img
                   src={pool.set.logo}
                   alt=""
-                  width={140}
-                  height={52}
                   className="w-4/5 h-auto object-contain"
-                  unoptimized
                 />
               )}
               <span className="text-[0.65rem] uppercase tracking-[0.25em] text-mist-500">
