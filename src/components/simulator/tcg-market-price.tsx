@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CardFinish } from "@/types";
 import type {
   TcgMarketLookupResponse,
@@ -11,6 +11,10 @@ import { formatUsd } from "@/lib/calculations/format";
 type LoadState =
   | { status: "idle" | "loading"; quote: null }
   | { status: TcgMarketLookupResponse["status"]; quote: TcgMarketQuote | null }
+  | { status: "error"; quote: null };
+
+export type TcgMarketSettledResult =
+  | TcgMarketLookupResponse
   | { status: "error"; quote: null };
 
 type SetMetadata = {
@@ -85,8 +89,14 @@ export function TcgMarketPrice(props: {
   compact?: boolean;
   className?: string;
   showDisclaimer?: boolean;
+  onResult?: (result: TcgMarketSettledResult) => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "idle", quote: null });
+  const onResultRef = useRef(props.onResult);
+
+  useEffect(() => {
+    onResultRef.current = props.onResult;
+  }, [props.onResult]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,9 +123,16 @@ export function TcgMarketPrice(props: {
         localId: props.localId,
         finish: props.finish,
       });
-      if (!cancelled) setState(result);
+      if (!cancelled) {
+        setState(result);
+        onResultRef.current?.(result);
+      }
     })().catch(() => {
-      if (!cancelled) setState({ status: "error", quote: null });
+      if (!cancelled) {
+        const result = { status: "error", quote: null } as const;
+        setState(result);
+        onResultRef.current?.(result);
+      }
     });
 
     return () => {
