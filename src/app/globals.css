@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/*
+  BoosterBilanz Design-Token
+  Grundidee: "Folie im Schatten" – tiefes Nachtviolett,
+  eine einzige irisierende Foliennaht als Signaturelement,
+  Preise in tabellarischer Mono-Schrift.
+*/
+@theme {
+  --color-ink-950: #0c0a13;
+  --color-ink-900: #131020;
+  --color-ink-800: #1b1730;
+  --color-ink-700: #262040;
+  --color-ink-600: #363058;
+  --color-mist-100: #f0eefa;
+  --color-mist-300: #c9c4e0;
+  --color-mist-500: #8d87ad;
+  --color-foil-400: #8fb6ff;
+  --color-foil-300: #b3ccff;
+  --color-gain-400: #3fd68c;
+  --color-loss-400: #ff7a8a;
+  --color-warn-300: #f5c169;
+
+  --font-display: "Avenir Next", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-numeric: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-mist-100);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Zahlen (Preise, Prozentwerte) immer tabellarisch */
+.num {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Signaturelement: die Foliennaht */
+.foil-seam {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #8fb6ff 20%,
+    #c9a3ff 40%,
+    #7fe8c3 60%,
+    #ffd08a 80%,
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: seam-shift 9s linear infinite;
+  opacity: 0.75;
+}
+
+@keyframes seam-shift {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Dezente Holo-Flaeche fuer hochwertige Karten */
+.holo-glow {
+  box-shadow:
+    0 0 24px rgba(143, 182, 255, 0.35),
+    0 0 60px rgba(201, 163, 255, 0.18);
+}
+
+.panel {
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 1rem;
+}
+
+.card-back {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(143, 182, 255, 0.16), transparent 55%),
+    radial-gradient(circle at 75% 80%, rgba(201, 163, 255, 0.12), transparent 55%),
+    var(--color-ink-800);
+  border: 1px solid var(--color-ink-600);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-foil-400);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foil-seam {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes float-particle {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-70px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+.particle {
+  animation: float-particle 2.4s ease-out infinite;
+}
