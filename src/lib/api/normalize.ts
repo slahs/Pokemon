@@ -14,7 +14,23 @@ export function buildImageUrl(
   quality: "low" | "high",
 ): string | null {
   if (!base) return null;
-  return `${base}/${quality}.webp`;
+  const clean = base.trim().replace(/\/$/, "");
+
+  // TCGdex liefert normalerweise eine Basis-URL ohne Dateiendung. Die
+  // Abfrage bleibt aber auch stabil, falls bereits eine fertige Asset-URL
+  // geliefert oder in Tests/Mocks hinterlegt wird.
+  if (/\/(?:low|high)\.(?:webp|png|jpe?g)(?:\?.*)?$/i.test(clean)) {
+    return clean.replace(/\/(?:low|high)\.(?:webp|png|jpe?g)(\?.*)?$/i, `/${quality}.webp$1`);
+  }
+
+  return `${clean}/${quality}.webp`;
+}
+
+/** Baut eine WebP-URL fuer Setlogos und Setsymbole. */
+export function buildSetAssetUrl(base: string | null | undefined): string | null {
+  if (!base) return null;
+  const clean = base.trim();
+  return /\.(?:webp|png|jpe?g)(?:\?.*)?$/i.test(clean) ? clean : `${clean}.webp`;
 }
 
 function num(v: number | null | undefined): number | null {
@@ -67,6 +83,7 @@ export function normalizeCard(
   setId: string,
   setName: string,
   language: "de" | "en",
+  fallbackImage?: string | null,
 ): NormalizedCard {
   const finishes: CardFinish[] = [];
   const v = card.variants ?? {};
@@ -83,8 +100,8 @@ export function normalizeCard(
     name: card.name,
     setId,
     setName,
-    imageLow: buildImageUrl(card.image, "low"),
-    imageHigh: buildImageUrl(card.image, "high"),
+    imageLow: buildImageUrl(card.image ?? fallbackImage, "low"),
+    imageHigh: buildImageUrl(card.image ?? fallbackImage, "high"),
     rarity: card.rarity ?? null,
     canonicalRarity: canonicalizeRarity(card.rarity),
     category: card.category ?? "Unbekannt",
@@ -98,6 +115,7 @@ export function normalizeCard(
 export function normalizeSetSummary(
   set: TcgdexSetBrief,
   language: "de" | "en",
+  fallbackMedia?: Pick<TcgdexSetBrief, "logo" | "symbol"> | null,
 ): NormalizedSetSummary {
   return {
     id: set.id,
@@ -106,8 +124,8 @@ export function normalizeSetSummary(
     releaseDate: set.releaseDate ?? null,
     cardCountOfficial: set.cardCount?.official ?? null,
     cardCountTotal: set.cardCount?.total ?? null,
-    logo: set.logo ? `${set.logo}.webp` : null,
-    symbol: set.symbol ? `${set.symbol}.webp` : null,
+    logo: buildSetAssetUrl(set.logo ?? fallbackMedia?.logo),
+    symbol: buildSetAssetUrl(set.symbol ?? fallbackMedia?.symbol),
     language,
   };
 }

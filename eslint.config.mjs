@@ -4,8 +4,15 @@ const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-  { rules: { "@next/next/no-img-element": "off" } },
-  { ignores: [".next/**", "node_modules/**", "playwright-report/**", "test-results/**"] },
+  {
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      "playwright-report/**",
+      "test-results/**",
+    ],
+  },
 ];
 
 export default eslintConfig;

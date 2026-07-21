@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { clearSession, loadSession } from "@/lib/storage/session-storage";
 import { exportSessionCsv, exportSessionJson } from "@/lib/storage/export";
 import { formatDateTime, formatEur, formatPercent } from "@/lib/calculations/format";
@@ -200,10 +201,13 @@ export function SessionDashboard() {
                     <figure key={`${card.cardId}-${i}`} className="text-center">
                       <div className="aspect-[5/7] rounded-md overflow-hidden bg-ink-800">
                         {card.imageLow ? (
-                          <img
+                          <Image
                             src={card.imageLow}
                             alt={`Karte ${card.name}`}
+                            width={100}
+                            height={140}
                             className="w-full h-full object-contain"
+                            unoptimized
                           />
                         ) : (
                           <span className="text-[0.6rem] text-mist-500">Kein Bild</span>

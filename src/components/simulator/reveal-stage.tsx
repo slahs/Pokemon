@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import type { RevealCard } from "@/lib/simulation/booster-service";
 import { formatEur } from "@/lib/calculations/format";
@@ -128,7 +129,7 @@ export function RevealStage(props: {
       {/* Naechste Kartenabbildung vorladen */}
       {next?.imageHigh && (
         <div className="hidden" aria-hidden="true">
-          <img src={next.imageHigh} alt="" width={10} height={14} />
+          <Image src={next.imageHigh} alt="" width={10} height={14} unoptimized />
         </div>
       )}
 
@@ -195,10 +196,14 @@ function CardFace({ card, onClick }: { card: RevealCard; onClick?: () => void })
       )}
       <div className="aspect-[5/7] rounded-2xl overflow-hidden bg-ink-800 border border-ink-600">
         {card.imageHigh ? (
-          <img
+          <Image
             src={card.imageHigh}
             alt={`Karte ${card.name}`}
+            width={480}
+            height={672}
             className="w-full h-full object-contain"
+            priority
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-mist-500 text-sm px-4 text-center">

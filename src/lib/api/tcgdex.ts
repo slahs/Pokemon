@@ -11,21 +11,34 @@ import type { NormalizedCard, NormalizedSetSummary, SetPoolResponse } from "@/ty
 
 const BASE = APP_CONFIG.tcgdexBaseUrl;
 
-/** Laedt die deutsche Setliste, faellt bei Bedarf auf Englisch zurueck. */
+/**
+ * Laedt die deutsche Setliste und ergaenzt fehlende Logos/Symbole aus der
+ * englischen Liste. Fehlen deutsche Daten komplett, wird Englisch verwendet.
+ */
 export async function fetchSets(): Promise<NormalizedSetSummary[]> {
   const revalidateSeconds = APP_CONFIG.cache.setsSeconds;
-  const deRaw = await fetchJsonWithRetry(`${BASE}/de/sets`, { revalidateSeconds }).catch(
-    () => null,
-  );
-  if (deRaw) {
-    const parsed = tcgdexSetListSchema.safeParse(deRaw);
-    if (parsed.success && parsed.data.length > 0) {
-      return parsed.data.map((s) => normalizeSetSummary(s, "de"));
-    }
+  const [deRaw, enRaw] = await Promise.all([
+    fetchJsonWithRetry(`${BASE}/de/sets`, { revalidateSeconds }).catch(() => null),
+    fetchJsonWithRetry(`${BASE}/en/sets`, { revalidateSeconds }).catch(() => null),
+  ]);
+
+  const parsedDe = tcgdexSetListSchema.safeParse(deRaw);
+  const parsedEn = tcgdexSetListSchema.safeParse(enRaw);
+
+  if (parsedDe.success && parsedDe.data.length > 0) {
+    const englishById = new Map(
+      parsedEn.success ? parsedEn.data.map((set) => [set.id, set] as const) : [],
+    );
+    return parsedDe.data.map((set) =>
+      normalizeSetSummary(set, "de", englishById.get(set.id) ?? null),
+    );
   }
-  const enRaw = await fetchJsonWithRetry(`${BASE}/en/sets`, { revalidateSeconds });
-  const parsedEn = tcgdexSetListSchema.parse(enRaw ?? []);
-  return parsedEn.map((s) => normalizeSetSummary(s, "en"));
+
+  if (parsedEn.success) {
+    return parsedEn.data.map((set) => normalizeSetSummary(set, "en"));
+  }
+
+  return [];
 }
 
 async function fetchSetDetail(setId: string, lang: "de" | "en") {
@@ -89,22 +102,56 @@ export async function fetchSetPool(setId: string): Promise<SetPoolResponse> {
     throw new Error(`Set ${setId} wurde bei TCGdex nicht gefunden.`);
   }
 
-  const setSummary = normalizeSetSummary(detail, language);
+  // Deutsche Metadaten sind bei TCGdex oft schon vorhanden, obwohl die
+  // zugehoerigen Scans oder Setlogos noch fehlen. Deshalb wird das englische
+  // Set einmal geladen und ausschliesslich als Medien-Fallback verwendet.
+  const englishDetail =
+    language === "de" ? await fetchSetDetail(setId, "en").catch(() => null) : detail;
+  const setSummary = normalizeSetSummary(detail, language, englishDetail);
+  const englishBriefById = new Map(
+    (englishDetail?.cards ?? []).map((card) => [card.id, card] as const),
+  );
+  const englishBriefByLocalId = new Map(
+    (englishDetail?.cards ?? []).map((card) => [card.localId, card] as const),
+  );
   let englishFallbackCount = 0;
 
   const cards = await mapWithConcurrency(
     detail.cards,
     APP_CONFIG.api.poolConcurrency,
     async (brief): Promise<NormalizedCard | null> => {
+      const englishBrief =
+        englishBriefById.get(brief.id) ?? englishBriefByLocalId.get(brief.localId) ?? null;
+      const englishCardId = englishBrief?.id ?? brief.id;
       let card = language === "de" ? await fetchCardDetail(brief.id, "de") : null;
-      let cardLang: "de" | "en" = "de";
+      let cardLang: "de" | "en" = language;
+      let englishCard: Awaited<ReturnType<typeof fetchCardDetail>> = null;
+
       if (!card) {
-        card = await fetchCardDetail(brief.id, "en");
+        englishCard = await fetchCardDetail(englishCardId, "en");
+        card = englishCard;
         cardLang = "en";
         if (card && language === "de") englishFallbackCount++;
       }
       if (!card) return null;
-      return normalizeCard(card, setSummary.id, setSummary.name, language === "en" ? "en" : cardLang);
+
+      let fallbackImage = englishBrief?.image ?? null;
+
+      // Sehr alte oder unvollstaendige Setantworten enthalten gelegentlich
+      // auch im Karten-Brief kein Bild. Dann wird nur fuer diese Karte das
+      // englische Detail nachgeladen.
+      if (!card.image && !fallbackImage && language === "de") {
+        englishCard ??= await fetchCardDetail(englishCardId, "en");
+        fallbackImage = englishCard?.image ?? null;
+      }
+
+      return normalizeCard(
+        card,
+        setSummary.id,
+        setSummary.name,
+        language === "en" ? "en" : cardLang,
+        fallbackImage,
+      );
     },
   );
 

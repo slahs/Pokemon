@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { formatDate } from "@/lib/calculations/format";
 
@@ -170,10 +171,13 @@ export function SetBrowser() {
             <li key={set.id} className="panel p-4 flex flex-col gap-3">
               <div className="h-14 flex items-center">
                 {set.logo ? (
-                  <img
+                  <Image
                     src={set.logo}
                     alt={`Logo des Sets ${set.name}`}
+                    width={140}
+                    height={52}
                     className="h-12 w-auto object-contain"
+                    unoptimized
                   />
                 ) : (
                   <span className="text-mist-500 text-sm">Kein Logo</span>
