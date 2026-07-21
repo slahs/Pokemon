@@ -14,6 +14,7 @@ type LoadState =
   | { status: "error"; quote: null };
 
 type SetMetadata = {
+  id: string;
   name: string;
   releaseDate: string | null;
   cardCountOfficial: number | null;
@@ -34,7 +35,7 @@ function loadSetMetadata(): Promise<SetMetadata[]> {
 }
 
 export function TcgMarketPrice(props: {
-  cardId: string;
+  cardId?: string;
   setName: string;
   releaseDate?: string | null;
   cardCount?: number | null;
@@ -48,12 +49,14 @@ export function TcgMarketPrice(props: {
     setState({ status: "loading", quote: null });
 
     void (async () => {
+      let cardId = props.cardId ?? "";
       let releaseDate = props.releaseDate ?? null;
       let cardCount = props.cardCount ?? null;
 
-      if (!releaseDate || cardCount === null) {
+      if (!cardId || !releaseDate || cardCount === null) {
         const sets = await loadSetMetadata();
         const set = sets.find((candidate) => candidate.name === props.setName);
+        cardId ||= set ? `${set.id}-${props.localId}` : "";
         releaseDate ??= set?.releaseDate ?? null;
         cardCount ??= set?.cardCountOfficial ?? set?.cardCountTotal ?? null;
       }
@@ -62,7 +65,7 @@ export function TcgMarketPrice(props: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cardId: props.cardId,
+          cardId,
           setName: props.setName,
           releaseDate,
           cardCount,
