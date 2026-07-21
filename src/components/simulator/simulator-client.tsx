@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { findProfileForSet } from "@/config/simulation-profiles";
-import { openBooster, buildBoosterRecord, type RevealCard } from "@/lib/simulation/booster-service";
+import {
+  openBooster,
+  buildBoosterRecord,
+  type RevealCard,
+} from "@/lib/simulation/booster-service";
 import { createCryptoRng } from "@/lib/simulation/rng";
 import { appendBooster } from "@/lib/storage/session-storage";
 import { useSettings } from "@/components/settings-context";
@@ -186,14 +190,13 @@ export function SimulatorClient({ setId }: { setId: string }) {
             );
           }
         }
-        if (next >= cards.length) {
-          // Auswertung nach kurzer Verzögerung, damit der letzte Flip sichtbar bleibt.
-          window.setTimeout(() => finishBooster(cards), 650);
+        if (next >= cards.length && cards.length > 0) {
+          announce("Letzte Karte aufgedeckt. Die Auswertung kann jetzt geöffnet werden.");
         }
         return next;
       });
     },
-    [cards, playRevealSound, announce, finishBooster],
+    [cards, playRevealSound, announce],
   );
 
   const skipBulk = useCallback(() => {
@@ -201,19 +204,21 @@ export function SimulatorClient({ setId }: { setId: string }) {
       let next = prev;
       while (next < cards.length && cards[next]?.isBulk) next++;
       if (next === prev && next < cards.length) return prev;
-      if (next >= cards.length) {
-        window.setTimeout(() => finishBooster(cards), 400);
-      } else {
-        announce(`${next - prev} Bulk-Karten automatisch aufgedeckt.`);
+      if (next > prev) {
+        announce(
+          next >= cards.length
+            ? `${next - prev} Bulk-Karten aufgedeckt. Die letzte Karte bleibt zur Ansicht geöffnet.`
+            : `${next - prev} Bulk-Karten automatisch aufgedeckt.`,
+        );
       }
       return next;
     });
-  }, [cards, finishBooster, announce]);
+  }, [cards, announce]);
 
   const revealAll = useCallback(() => {
     setRevealedCount(cards.length);
-    window.setTimeout(() => finishBooster(cards), 400);
-  }, [cards, finishBooster]);
+    announce("Alle Karten aufgedeckt. Die letzte Karte bleibt sichtbar, bis du das Pack auswertest.");
+  }, [cards.length, announce]);
 
   const cancelBooster = useCallback(() => {
     setCards([]);
@@ -390,11 +395,14 @@ export function SimulatorClient({ setId }: { setId: string }) {
           onReveal={() => revealNext(1)}
           onRevealAll={revealAll}
           onSkipBulk={skipBulk}
+          onFinish={() => finishBooster(cards)}
           onCancel={cancelBooster}
           animationsEnabled={settings.animationsEnabled && !settings.reducedAnimations}
           booster={selectedBooster}
           setLogo={pool.set.logo}
           setName={pool.set.name}
+          setReleaseDate={pool.set.releaseDate}
+          setCardCount={pool.set.cardCountOfficial ?? pool.set.cardCountTotal}
         />
       )}
 

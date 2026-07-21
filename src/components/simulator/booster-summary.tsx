@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { APP_CONFIG } from "@/config/app-config";
-import { formatEur, formatPercent } from "@/lib/calculations/format";
-import { TcgMarketPrice } from "@/components/simulator/tcg-market-price";
+import { formatEur, formatPercent, formatUsd } from "@/lib/calculations/format";
+import { RarityCardSurface } from "@/components/cards/rarity-card-surface";
+import {
+  TcgMarketPrice,
+  type TcgMarketSettledResult,
+} from "@/components/simulator/tcg-market-price";
 import type { BoosterRecord, BoosterResultCard } from "@/types";
 
 const FINISH_LABELS = {
@@ -27,12 +31,21 @@ function Row({
     <div className="flex justify-between gap-4 border-b border-white/8 py-2.5 text-sm last:border-0">
       <dt className="text-text-muted">{label}</dt>
       <dd
-        className={`num ${emphasis === "gain" ? "text-gain" : emphasis === "loss" ? "text-loss" : ""}`}
+        className={`num text-right ${emphasis === "gain" ? "text-gain" : emphasis === "loss" ? "text-loss" : ""}`}
       >
         {value}
       </dd>
     </div>
   );
+}
+
+function cardResultKey(card: BoosterResultCard, index: number): string {
+  return `${card.cardId}-${card.finish}-${index}`;
+}
+
+function quoteValue(result: TcgMarketSettledResult | undefined): number | null {
+  if (result?.status !== "ready" || !result.quote) return null;
+  return result.quote.marketUsd ?? result.quote.lowUsd ?? result.quote.medianUsd;
 }
 
 export function BoosterSummary({
@@ -43,9 +56,15 @@ export function BoosterSummary({
   onNextBooster: () => void;
 }) {
   const [selectedCard, setSelectedCard] = useState<BoosterResultCard | null>(null);
+  const [tcgResults, setTcgResults] = useState<Record<string, TcgMarketSettledResult>>({});
   const gross = record.grossProfitLoss;
   const net = record.netProfitLoss;
   const fees = record.grossCardValue - record.netCardValue;
+
+  useEffect(() => {
+    setTcgResults({});
+    setSelectedCard(null);
+  }, [record.id]);
 
   useEffect(() => {
     if (!selectedCard) return;
@@ -61,6 +80,46 @@ export function BoosterSummary({
     };
   }, [selectedCard]);
 
+  const registerTcgResult = useCallback((key: string, result: TcgMarketSettledResult) => {
+    setTcgResults((current) => {
+      const previous = current[key];
+      if (previous?.status === result.status && previous.quote === result.quote) return current;
+      return { ...current, [key]: result };
+    });
+  }, []);
+
+  const tcgSummary = useMemo(() => {
+    let total = 0;
+    let resolvedCount = 0;
+    let pricedCount = 0;
+
+    record.cards.forEach((card, index) => {
+      const result = tcgResults[cardResultKey(card, index)];
+      if (!result) return;
+      resolvedCount++;
+      const value = quoteValue(result);
+      if (value !== null) {
+        total += value;
+        pricedCount++;
+      }
+    });
+
+    return { total, resolvedCount, pricedCount };
+  }, [record.cards, tcgResults]);
+
+  const tcgTotalLabel = useMemo(() => {
+    if (tcgSummary.resolvedCount === 0) return "wird geladen …";
+    if (tcgSummary.resolvedCount < record.cards.length) {
+      return `${formatUsd(tcgSummary.total)} USD · ${tcgSummary.resolvedCount}/${record.cards.length} geladen`;
+    }
+    if (tcgSummary.pricedCount === 0) return "Keine TCGPlayer-Preise";
+    const coverage =
+      tcgSummary.pricedCount < record.cards.length
+        ? ` · ${tcgSummary.pricedCount}/${record.cards.length} mit Preis`
+        : "";
+    return `${formatUsd(tcgSummary.total)} USD${coverage}`;
+  }, [record.cards.length, tcgSummary]);
+
   return (
     <>
       <section
@@ -75,12 +134,13 @@ export function BoosterSummary({
             </p>
           </div>
           <ul className="grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-4">
-            {record.cards.map((card, i) => {
+            {record.cards.map((card, index) => {
+              const resultKey = cardResultKey(card, index);
               const isBest =
                 record.bestCard?.cardId === card.cardId && card.price === record.bestCard?.price;
               return (
                 <li
-                  key={`${card.cardId}-${card.finish}-${i}`}
+                  key={resultKey}
                   className={`panel overflow-hidden ${isBest ? "border-warn holo-glow" : ""}`}
                 >
                   <button
@@ -89,7 +149,12 @@ export function BoosterSummary({
                     className="group block h-full w-full p-2.5 text-left"
                     aria-label={`${card.name} erneut ansehen`}
                   >
-                    <div className="aspect-[5/7] overflow-hidden rounded-xl bg-panel-solid">
+                    <RarityCardSurface
+                      rarity={card.rarity}
+                      finish={card.finish}
+                      interactive={false}
+                      className="aspect-[5/7] rounded-xl bg-panel-solid"
+                    >
                       {card.imageLow ? (
                         <Image
                           src={card.imageLow}
@@ -104,7 +169,7 @@ export function BoosterSummary({
                           Kein Bild
                         </div>
                       )}
-                    </div>
+                    </RarityCardSurface>
                     <p className="mt-2 truncate text-xs leading-snug" title={card.name}>
                       {isBest && <span aria-hidden="true">★ </span>}
                       {card.name}
@@ -120,6 +185,7 @@ export function BoosterSummary({
                       localId={card.localId}
                       finish={card.finish}
                       className="mt-0.5 line-clamp-2"
+                      onResult={(result) => registerTcgResult(resultKey, result)}
                     />
                     {isBest && <p className="sr-only">Wertvollste Karte dieses Boosters</p>}
                   </button>
@@ -132,7 +198,8 @@ export function BoosterSummary({
         <aside className="panel p-6">
           <h2 className="mb-3 font-display text-lg font-bold">Auswertung</h2>
           <dl>
-            <Row label="Kartenwert" value={formatEur(record.grossCardValue)} />
+            <Row label="Cardmarket-Kartenwert" value={formatEur(record.grossCardValue)} />
+            <Row label="TCGPlayer-Gesamtwert" value={tcgTotalLabel} />
             <Row label="Booster-Kaufpreis" value={formatEur(record.packPurchasePrice)} />
             <Row
               label="Brutto-Ergebnis"
@@ -162,7 +229,7 @@ export function BoosterSummary({
           )}
           <p className="mt-3 text-xs leading-relaxed text-text-dim">{APP_CONFIG.valueDisclaimer}</p>
           <p className="mt-2 text-xs leading-relaxed text-text-dim">
-            TCGPlayer-Werte werden in USD nur zum Vergleich angezeigt und nicht in die Euro-Bilanz
+            TCGPlayer-Werte werden in USD nur zum Vergleich summiert und nicht in die Euro-Bilanz
             eingerechnet.
           </p>
 
@@ -200,22 +267,26 @@ export function BoosterSummary({
             </button>
 
             <div className="grid items-start gap-6 sm:grid-cols-[minmax(240px,330px)_1fr]">
-              <div className="mx-auto w-full max-w-[330px] overflow-hidden rounded-[18px] bg-panel-solid shadow-[0_24px_60px_-24px_oklch(0.05_0.04_275/0.95)]">
+              <RarityCardSurface
+                rarity={selectedCard.rarity}
+                finish={selectedCard.finish}
+                className="mx-auto aspect-[5/7] w-full max-w-[330px] rounded-[18px] bg-panel-solid"
+              >
                 {selectedCard.imageHigh ?? selectedCard.imageLow ? (
                   <Image
                     src={(selectedCard.imageHigh ?? selectedCard.imageLow) as string}
                     alt={`Karte ${selectedCard.name}`}
                     width={660}
                     height={924}
-                    className="h-auto w-full object-contain"
+                    className="h-full w-full object-contain"
                     unoptimized
                   />
                 ) : (
-                  <div className="flex aspect-[5/7] items-center justify-center text-sm text-text-dim">
+                  <div className="flex h-full items-center justify-center text-sm text-text-dim">
                     Kein Kartenbild verfügbar
                   </div>
                 )}
-              </div>
+              </RarityCardSurface>
 
               <div className="pt-10 sm:pt-3">
                 <p className="font-numeric text-xs uppercase tracking-[0.12em] text-text-dim">
