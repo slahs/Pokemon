@@ -21,7 +21,17 @@ type SetMetadata = {
   cardCountTotal: number | null;
 };
 
+type LookupBody = {
+  cardId: string;
+  setName: string;
+  releaseDate: string | null;
+  cardCount: number | null;
+  localId: string;
+  finish: CardFinish;
+};
+
 let setMetadataPromise: Promise<SetMetadata[]> | null = null;
+const marketLookupCache = new Map<string, Promise<TcgMarketLookupResponse>>();
 
 function loadSetMetadata(): Promise<SetMetadata[]> {
   setMetadataPromise ??= fetch("/api/sets")
@@ -34,6 +44,37 @@ function loadSetMetadata(): Promise<SetMetadata[]> {
   return setMetadataPromise;
 }
 
+function requestMarketLookup(body: LookupBody): Promise<TcgMarketLookupResponse> {
+  const key = JSON.stringify(body);
+  const cached = marketLookupCache.get(key);
+  if (cached) return cached;
+
+  const request = fetch("/api/tcg-market", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+    .then(async (response) => {
+      if (!response.ok) throw new Error("TCG-Marktpreis konnte nicht geladen werden.");
+      return response.json() as Promise<TcgMarketLookupResponse>;
+    })
+    .catch((error) => {
+      marketLookupCache.delete(key);
+      throw error;
+    });
+
+  marketLookupCache.set(key, request);
+  return request;
+}
+
+function statusLabel(status: LoadState["status"]): string {
+  if (status === "missing-key") return "API-Key nicht verfügbar";
+  if (status === "set-not-found") return "Set nicht eindeutig zugeordnet";
+  if (status === "card-not-found") return "Karte nicht eindeutig zugeordnet";
+  if (status === "price-not-found") return "noch kein Preis verfügbar";
+  return "Preis konnte nicht geladen werden";
+}
+
 export function TcgMarketPrice(props: {
   cardId?: string;
   setName: string;
@@ -41,11 +82,14 @@ export function TcgMarketPrice(props: {
   cardCount?: number | null;
   localId: string;
   finish: CardFinish;
+  compact?: boolean;
+  className?: string;
+  showDisclaimer?: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "idle", quote: null });
 
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
     setState({ status: "loading", quote: null });
 
     void (async () => {
@@ -53,35 +97,30 @@ export function TcgMarketPrice(props: {
       let releaseDate = props.releaseDate ?? null;
       let cardCount = props.cardCount ?? null;
 
-      if (!cardId || !releaseDate || cardCount === null) {
+      if (!cardId) {
         const sets = await loadSetMetadata();
         const set = sets.find((candidate) => candidate.name === props.setName);
-        cardId ||= set ? `${set.id}-${props.localId}` : "";
+        cardId = set ? `${set.id}-${props.localId}` : "";
         releaseDate ??= set?.releaseDate ?? null;
         cardCount ??= set?.cardCountOfficial ?? set?.cardCountTotal ?? null;
       }
 
-      const response = await fetch("/api/tcg-market", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cardId,
-          setName: props.setName,
-          releaseDate,
-          cardCount,
-          localId: props.localId,
-          finish: props.finish,
-        }),
-        signal: controller.signal,
+      const result = await requestMarketLookup({
+        cardId,
+        setName: props.setName,
+        releaseDate,
+        cardCount,
+        localId: props.localId,
+        finish: props.finish,
       });
-      if (!response.ok) throw new Error("TCG-Marktpreis konnte nicht geladen werden.");
-      const result = (await response.json()) as TcgMarketLookupResponse;
-      if (!controller.signal.aborted) setState(result);
+      if (!cancelled) setState(result);
     })().catch(() => {
-      if (!controller.signal.aborted) setState({ status: "error", quote: null });
+      if (!cancelled) setState({ status: "error", quote: null });
     });
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [
     props.cardId,
     props.setName,
@@ -91,26 +130,37 @@ export function TcgMarketPrice(props: {
     props.finish,
   ]);
 
+  const baseClass = props.className ?? "";
+
   if (state.status === "idle" || state.status === "loading") {
-    return <p className="text-xs text-text-dim">TCGPlayer: Preis wird geladen …</p>;
+    return (
+      <p className={`${props.compact ? "text-[0.68rem]" : "text-xs"} text-text-dim ${baseClass}`}>
+        {props.compact ? "TCG: lädt …" : "TCGPlayer: Preis wird geladen …"}
+      </p>
+    );
   }
 
   if (state.status !== "ready" || !state.quote) {
-    const label =
-      state.status === "missing-key"
-        ? "API-Key nicht verfügbar"
-        : state.status === "set-not-found"
-          ? "Set nicht eindeutig zugeordnet"
-          : state.status === "card-not-found"
-            ? "Karte nicht eindeutig zugeordnet"
-            : "noch kein Preis verfügbar";
-    return <p className="text-xs text-text-dim">TCGPlayer: {label}</p>;
+    return (
+      <p className={`${props.compact ? "text-[0.68rem]" : "text-xs"} text-text-dim ${baseClass}`}>
+        {props.compact ? `TCG: ${statusLabel(state.status)}` : `TCGPlayer: ${statusLabel(state.status)}`}
+      </p>
+    );
   }
 
   const quote = state.quote;
   const primary = quote.marketUsd ?? quote.lowUsd ?? quote.medianUsd;
+
+  if (props.compact) {
+    return (
+      <p className={`num text-[0.68rem] text-accent-cyan ${baseClass}`}>
+        TCG: {formatUsd(primary)} USD{quote.printing ? ` · ${quote.printing}` : ""}
+      </p>
+    );
+  }
+
   return (
-    <p className="text-xs leading-relaxed text-text-muted">
+    <p className={`text-xs leading-relaxed text-text-muted ${baseClass}`}>
       TCGPlayer: {formatUsd(primary)} USD
       {quote.printing ? ` · ${quote.printing}` : ""}
       {quote.tcgplayerUrl ? (
@@ -126,9 +176,11 @@ export function TcgMarketPrice(props: {
           </a>
         </>
       ) : null}
-      <span className="block text-[0.68rem] text-text-dim">
-        Nur Vergleichswert, nicht Teil der Bilanz.
-      </span>
+      {(props.showDisclaimer ?? true) && (
+        <span className="block text-[0.68rem] text-text-dim">
+          Nur Vergleichswert, nicht Teil der Bilanz.
+        </span>
+      )}
     </p>
   );
 }
