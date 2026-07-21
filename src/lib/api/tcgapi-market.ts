@@ -1,10 +1,10 @@
 import "server-only";
 import type { CardFinish } from "@/types";
 import {
-  normalizeCardNumber,
   normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
+  pickTcgSearchCard,
   pickTcgSearchQuote,
   pickTcgSet,
   type TcgApiCardCandidate,
@@ -83,9 +83,9 @@ function responseHasMore(value: unknown): boolean {
 
 async function fetchPokemonSets(): Promise<TcgApiSetCandidate[]> {
   const sets: TcgApiSetCandidate[] = [];
-  for (let page = 1; page <= 10; page++) {
-    const raw = await fetchTcgJson(`/games/pokemon/sets?per_page=100&page=${page}`, {
-      authenticated: true,
+  for (let page = 1; page <= 5; page++) {
+    const raw = await fetchTcgJson(`/games/pokemon/sets?per_page=200&page=${page}`, {
+      authenticated: false,
       revalidate: DAY,
     });
     const data = responseData(raw);
@@ -118,6 +118,8 @@ type TcgDexSetHint = {
 type TcgDexCardHint = {
   name: string;
   localId: string;
+  setId: string | null;
+  setName: string | null;
 };
 
 function parseTcgdexSets(value: unknown): TcgDexSetHint[] {
@@ -173,7 +175,15 @@ async function resolveTcgdexCardHint(cardId: string): Promise<TcgDexCardHint | n
   const row = objectOrNull(responseData(raw));
   const name = stringOrNull(row?.name);
   const localId = stringOrNull(row?.localId);
-  return name && localId ? { name, localId } : null;
+  const set = objectOrNull(row?.set);
+  return name && localId
+    ? {
+        name,
+        localId,
+        setId: stringOrNull(set?.id),
+        setName: stringOrNull(set?.name),
+      }
+    : null;
 }
 
 function parseSearchRows(raw: unknown): TcgApiSearchCandidate[] {
@@ -195,6 +205,7 @@ function parseSearchRows(raw: unknown): TcgApiSearchCandidate[] {
         id,
         name,
         number,
+        setName: stringOrNull(row.set_name),
         productType: stringOrNull(row.product_type),
         tcgplayerUrl:
           stringOrNull(row.tcgplayer_url) ??
@@ -212,14 +223,18 @@ function parseSearchRows(raw: unknown): TcgApiSearchCandidate[] {
     .filter((card): card is TcgApiSearchCandidate => card !== null);
 }
 
-async function searchTcgCards(query: string, setId: number): Promise<TcgApiSearchCandidate[]> {
+async function searchTcgCards(
+  query: string,
+  setId: number | null = null,
+): Promise<TcgApiSearchCandidate[]> {
   const params = new URLSearchParams({
     q: query,
     game: "pokemon",
-    set_id: String(setId),
     type: "Cards",
     per_page: "100",
   });
+  if (setId !== null) params.set("set_id", String(setId));
+
   const raw = await fetchTcgJson(`/search?${params.toString()}`, {
     authenticated: true,
     revalidate: SIX_HOURS,
@@ -306,14 +321,37 @@ export async function lookupTcgMarketPrice(input: {
 }): Promise<TcgMarketLookupResponse> {
   if (!process.env.TCGAPI_KEY?.trim()) return { status: "missing-key", quote: null };
 
-  const [sets, setHint, cardHint] = await Promise.all([
-    fetchPokemonSets(),
+  const [setHint, cardHint] = await Promise.all([
     resolveTcgdexSetHint(input.setName),
     resolveTcgdexCardHint(input.cardId),
   ]);
 
+  if (cardHint) {
+    const searchInput = {
+      localId: cardHint.localId || input.localId,
+      englishName: cardHint.name,
+      englishSetName: cardHint.setName ?? setHint?.name ?? null,
+      finish: input.finish,
+    };
+    const globalRows = await searchTcgCards(cardHint.name);
+    const globalCard = pickTcgSearchCard(globalRows, searchInput);
+
+    if (globalCard) {
+      const directQuote = pickTcgSearchQuote([globalCard], searchInput);
+      if (directQuote) return { status: "ready", quote: directQuote };
+
+      const prices = await fetchCardPrices(globalCard.id);
+      const detailQuote = pickTcgPrice(prices, input.finish, globalCard.tcgplayerUrl);
+      return detailQuote
+        ? { status: "ready", quote: detailQuote }
+        : { status: "price-not-found", quote: null };
+    }
+  }
+
+  const sets = await fetchPokemonSets();
+  const expectedSetName = cardHint?.setName ?? setHint?.name ?? input.setName;
   let set = pickTcgSet(sets, {
-    name: setHint?.name ?? input.setName,
+    name: expectedSetName,
     releaseDate: input.releaseDate ?? setHint?.releaseDate ?? null,
     cardCount: input.cardCount ?? setHint?.cardCount ?? null,
   });
@@ -329,21 +367,18 @@ export async function lookupTcgMarketPrice(input: {
 
   if (cardHint) {
     const searchRows = await searchTcgCards(cardHint.name, set.id);
-    const quote = pickTcgSearchQuote(searchRows, {
+    const searchInput = {
       localId: cardHint.localId || input.localId,
       englishName: cardHint.name,
+      englishSetName: set.name,
       finish: input.finish,
-    });
-    if (quote) return { status: "ready", quote };
-
-    const exactSearchCard = searchRows.find(
-      (candidate) =>
-        normalizeCardNumber(candidate.number) === normalizeCardNumber(input.localId) &&
-        normalizeComparableText(candidate.name) === normalizeComparableText(cardHint.name),
-    );
-    if (exactSearchCard) {
-      const prices = await fetchCardPrices(exactSearchCard.id);
-      const detailQuote = pickTcgPrice(prices, input.finish, exactSearchCard.tcgplayerUrl);
+    };
+    const searchCard = pickTcgSearchCard(searchRows, searchInput);
+    if (searchCard) {
+      const quote = pickTcgSearchQuote([searchCard], searchInput);
+      if (quote) return { status: "ready", quote };
+      const prices = await fetchCardPrices(searchCard.id);
+      const detailQuote = pickTcgPrice(prices, input.finish, searchCard.tcgplayerUrl);
       return detailQuote
         ? { status: "ready", quote: detailQuote }
         : { status: "price-not-found", quote: null };

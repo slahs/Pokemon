@@ -23,7 +23,10 @@ export type TcgApiPriceCandidate = {
   updatedAt: string | null;
 };
 
-export type TcgApiSearchCandidate = TcgApiCardCandidate & TcgApiPriceCandidate;
+export type TcgApiSearchCandidate = TcgApiCardCandidate &
+  TcgApiPriceCandidate & {
+    setName: string | null;
+  };
 
 export type TcgMarketQuote = {
   marketUsd: number | null;
@@ -171,13 +174,56 @@ export function pickTcgPrice(
   };
 }
 
-export function pickTcgSearchQuote(
-  candidates: TcgApiSearchCandidate[],
-  input: { localId: string; englishName: string; finish: CardFinish },
-): TcgMarketQuote | null {
-  const targetNumber = normalizeCardNumber(input.localId);
+function searchCandidateScore(
+  candidate: TcgApiSearchCandidate,
+  input: {
+    localId: string;
+    englishName: string;
+    englishSetName?: string | null;
+    finish: CardFinish;
+  },
+): number {
+  const candidateName = normalizeComparableText(candidate.name);
   const targetName = normalizeComparableText(input.englishName);
+  const candidateSet = normalizeComparableText(candidate.setName ?? "");
+  const targetSet = normalizeComparableText(input.englishSetName ?? "");
   const preferred: "Normal" | "Foil" = input.finish === "normal" ? "Normal" : "Foil";
+  let score = 0;
+
+  if (candidateName === targetName) score += 120;
+  else if (candidateName.includes(targetName) || targetName.includes(candidateName)) score += 45;
+
+  if (targetSet) {
+    if (candidateSet === targetSet) score += 160;
+    else if (candidateSet.includes(targetSet) || targetSet.includes(candidateSet)) score += 90;
+    else score -= 120;
+  }
+
+  if (canonicalPrinting(candidate.printing) === preferred) score += 25;
+  if (hasPrice(candidate)) score += 10;
+
+  const variantText = `${candidateName}${candidateSet}`;
+  if (
+    candidateName !== targetName &&
+    /(masterball|pokeball|energysymbol|pattern|stamped|reverse)/.test(variantText)
+  ) {
+    score -= 35;
+  }
+
+  return score;
+}
+
+export function pickTcgSearchCard(
+  candidates: TcgApiSearchCandidate[],
+  input: {
+    localId: string;
+    englishName: string;
+    englishSetName?: string | null;
+    finish: CardFinish;
+  },
+): TcgApiSearchCandidate | null {
+  const targetNumber = normalizeCardNumber(input.localId);
+  if (!targetNumber) return null;
 
   const ranked = candidates
     .filter((candidate) => normalizeCardNumber(candidate.number) === targetNumber)
@@ -185,18 +231,24 @@ export function pickTcgSearchQuote(
       (candidate) =>
         !candidate.productType || candidate.productType.toLocaleLowerCase("en") === "cards",
     )
-    .map((candidate) => {
-      let score = 0;
-      const candidateName = normalizeComparableText(candidate.name);
-      if (candidateName === targetName) score += 100;
-      else if (candidateName.includes(targetName) || targetName.includes(candidateName)) score += 30;
-      if (canonicalPrinting(candidate.printing) === preferred) score += 20;
-      if (hasPrice(candidate)) score += 10;
-      return { candidate, score };
-    })
+    .map((candidate) => ({ candidate, score: searchCandidateScore(candidate, input) }))
     .sort((a, b) => b.score - a.score);
 
-  const selected = ranked[0]?.candidate;
+  const best = ranked[0];
+  if (!best || best.score < 80) return null;
+  return best.candidate;
+}
+
+export function pickTcgSearchQuote(
+  candidates: TcgApiSearchCandidate[],
+  input: {
+    localId: string;
+    englishName: string;
+    englishSetName?: string | null;
+    finish: CardFinish;
+  },
+): TcgMarketQuote | null {
+  const selected = pickTcgSearchCard(candidates, input);
   if (!selected || !hasPrice(selected)) return null;
 
   return {
