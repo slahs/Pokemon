@@ -14,6 +14,7 @@ type LoadState =
   | { status: "error"; quote: null };
 
 type SetMetadata = {
+  id: string;
   name: string;
   releaseDate: string | null;
   cardCountOfficial: number | null;
@@ -34,6 +35,7 @@ function loadSetMetadata(): Promise<SetMetadata[]> {
 }
 
 export function TcgMarketPrice(props: {
+  cardId?: string;
   setName: string;
   releaseDate?: string | null;
   cardCount?: number | null;
@@ -47,20 +49,23 @@ export function TcgMarketPrice(props: {
     setState({ status: "loading", quote: null });
 
     void (async () => {
+      let cardId = props.cardId ?? "";
       let releaseDate = props.releaseDate ?? null;
       let cardCount = props.cardCount ?? null;
 
-      if (!releaseDate || cardCount === null) {
+      if (!cardId || !releaseDate || cardCount === null) {
         const sets = await loadSetMetadata();
         const set = sets.find((candidate) => candidate.name === props.setName);
+        cardId ||= set ? `${set.id}-${props.localId}` : "";
         releaseDate ??= set?.releaseDate ?? null;
-        cardCount ??= set?.cardCountTotal ?? set?.cardCountOfficial ?? null;
+        cardCount ??= set?.cardCountOfficial ?? set?.cardCountTotal ?? null;
       }
 
       const response = await fetch("/api/tcg-market", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          cardId,
           setName: props.setName,
           releaseDate,
           cardCount,
@@ -77,7 +82,14 @@ export function TcgMarketPrice(props: {
     });
 
     return () => controller.abort();
-  }, [props.setName, props.releaseDate, props.cardCount, props.localId, props.finish]);
+  }, [
+    props.cardId,
+    props.setName,
+    props.releaseDate,
+    props.cardCount,
+    props.localId,
+    props.finish,
+  ]);
 
   if (state.status === "idle" || state.status === "loading") {
     return <p className="text-xs text-text-dim">TCGPlayer: Preis wird geladen …</p>;
@@ -87,9 +99,11 @@ export function TcgMarketPrice(props: {
     const label =
       state.status === "missing-key"
         ? "API-Key nicht verfügbar"
-        : state.status === "set-not-found" || state.status === "card-not-found"
-          ? "Karte nicht eindeutig zugeordnet"
-          : "kein Preis verfügbar";
+        : state.status === "set-not-found"
+          ? "Set nicht eindeutig zugeordnet"
+          : state.status === "card-not-found"
+            ? "Karte nicht eindeutig zugeordnet"
+            : "noch kein Preis verfügbar";
     return <p className="text-xs text-text-dim">TCGPlayer: {label}</p>;
   }
 
@@ -112,7 +126,9 @@ export function TcgMarketPrice(props: {
           </a>
         </>
       ) : null}
-      <span className="block text-[0.68rem] text-text-dim">Nur Vergleichswert, nicht Teil der Bilanz.</span>
+      <span className="block text-[0.68rem] text-text-dim">
+        Nur Vergleichswert, nicht Teil der Bilanz.
+      </span>
     </p>
   );
 }

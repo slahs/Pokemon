@@ -1,12 +1,15 @@
 import "server-only";
 import type { CardFinish } from "@/types";
 import {
+  normalizeCardNumber,
   normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
+  pickTcgSearchQuote,
   pickTcgSet,
   type TcgApiCardCandidate,
   type TcgApiPriceCandidate,
+  type TcgApiSearchCandidate,
   type TcgApiSetCandidate,
   type TcgMarketLookupResponse,
 } from "@/lib/api/tcgapi-matching";
@@ -14,6 +17,7 @@ import {
 const API_BASE = "https://api.tcgapi.dev/v1";
 const TCGDEX_BASE = "https://api.tcgdex.net/v2";
 const DAY = 60 * 60 * 24;
+const SIX_HOURS = 6 * 60 * 60;
 
 function numberOrNull(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -60,7 +64,9 @@ async function fetchPublicJson(url: string): Promise<unknown> {
     next: { revalidate: DAY },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw new Error(`Öffentliche Kartendaten antworteten mit HTTP ${response.status}.`);
+  if (!response.ok) {
+    throw new Error(`Öffentliche Kartendaten antworteten mit HTTP ${response.status}.`);
+  }
   return response.json();
 }
 
@@ -79,7 +85,7 @@ async function fetchPokemonSets(): Promise<TcgApiSetCandidate[]> {
   const sets: TcgApiSetCandidate[] = [];
   for (let page = 1; page <= 10; page++) {
     const raw = await fetchTcgJson(`/games/pokemon/sets?per_page=100&page=${page}`, {
-      authenticated: false,
+      authenticated: true,
       revalidate: DAY,
     });
     const data = responseData(raw);
@@ -109,6 +115,11 @@ type TcgDexSetHint = {
   cardCount: number | null;
 };
 
+type TcgDexCardHint = {
+  name: string;
+  localId: string;
+};
+
 function parseTcgdexSets(value: unknown): TcgDexSetHint[] {
   const data = responseData(value);
   if (!Array.isArray(data)) return [];
@@ -124,7 +135,7 @@ function parseTcgdexSets(value: unknown): TcgDexSetHint[] {
         id,
         name,
         releaseDate: stringOrNull(row?.releaseDate),
-        cardCount: numberOrNull(cardCount?.total) ?? numberOrNull(cardCount?.official),
+        cardCount: numberOrNull(cardCount?.official) ?? numberOrNull(cardCount?.total),
       };
     })
     .filter((set): set is TcgDexSetHint => set !== null);
@@ -154,6 +165,68 @@ async function resolveTcgdexSetHint(setName: string): Promise<TcgDexSetHint | nu
   };
 }
 
+async function resolveTcgdexCardHint(cardId: string): Promise<TcgDexCardHint | null> {
+  if (!cardId) return null;
+  const raw = await fetchPublicJson(`${TCGDEX_BASE}/en/cards/${encodeURIComponent(cardId)}`).catch(
+    () => null,
+  );
+  const row = objectOrNull(responseData(raw));
+  const name = stringOrNull(row?.name);
+  const localId = stringOrNull(row?.localId);
+  return name && localId ? { name, localId } : null;
+}
+
+function parseSearchRows(raw: unknown): TcgApiSearchCandidate[] {
+  const data = responseData(raw);
+  if (!Array.isArray(data)) return [];
+
+  return data
+    .map((item): TcgApiSearchCandidate | null => {
+      const row = objectOrNull(item);
+      if (!row) return null;
+      const id = numberOrNull(row.id);
+      const name = stringOrNull(row.name);
+      const number = stringOrNull(row.number);
+      if (id === null || !name || !number) return null;
+
+      const nestedPrice = objectOrNull(row.price);
+      const tcgplayerId = numberOrNull(row.tcgplayer_id);
+      return {
+        id,
+        name,
+        number,
+        productType: stringOrNull(row.product_type),
+        tcgplayerUrl:
+          stringOrNull(row.tcgplayer_url) ??
+          (tcgplayerId === null ? null : `https://www.tcgplayer.com/product/${tcgplayerId}`),
+        printing: stringOrNull(row.printing),
+        marketPrice: numberOrNull(row.market_price) ?? numberOrNull(nestedPrice?.market_price),
+        lowPrice: numberOrNull(row.low_price) ?? numberOrNull(nestedPrice?.low_price),
+        medianPrice: numberOrNull(row.median_price) ?? numberOrNull(nestedPrice?.median_price),
+        updatedAt:
+          stringOrNull(row.price_updated_at) ??
+          stringOrNull(row.last_updated_at) ??
+          stringOrNull(row.updated_at),
+      };
+    })
+    .filter((card): card is TcgApiSearchCandidate => card !== null);
+}
+
+async function searchTcgCards(query: string, setId: number): Promise<TcgApiSearchCandidate[]> {
+  const params = new URLSearchParams({
+    q: query,
+    game: "pokemon",
+    set_id: String(setId),
+    type: "Cards",
+    per_page: "100",
+  });
+  const raw = await fetchTcgJson(`/search?${params.toString()}`, {
+    authenticated: true,
+    revalidate: SIX_HOURS,
+  });
+  return parseSearchRows(raw);
+}
+
 async function fetchSetCards(setId: number): Promise<TcgApiCardCandidate[]> {
   const cards: TcgApiCardCandidate[] = [];
   for (let page = 1; page <= 10; page++) {
@@ -170,12 +243,15 @@ async function fetchSetCards(setId: number): Promise<TcgApiCardCandidate[]> {
       const name = stringOrNull(row?.name);
       const number = stringOrNull(row?.number);
       if (id === null || !name || !number) continue;
+      const tcgplayerId = numberOrNull(row?.tcgplayer_id);
       cards.push({
         id,
         name,
         number,
         productType: stringOrNull(row?.product_type),
-        tcgplayerUrl: stringOrNull(row?.tcgplayer_url),
+        tcgplayerUrl:
+          stringOrNull(row?.tcgplayer_url) ??
+          (tcgplayerId === null ? null : `https://www.tcgplayer.com/product/${tcgplayerId}`),
       });
     }
     if (!responseHasMore(raw) || data.length === 0) break;
@@ -215,12 +291,13 @@ function parsePriceRows(raw: unknown): TcgApiPriceCandidate[] {
 async function fetchCardPrices(cardId: number): Promise<TcgApiPriceCandidate[]> {
   const raw = await fetchTcgJson(`/cards/${cardId}/prices`, {
     authenticated: true,
-    revalidate: 6 * 60 * 60,
+    revalidate: SIX_HOURS,
   });
   return parsePriceRows(raw);
 }
 
 export async function lookupTcgMarketPrice(input: {
+  cardId: string;
   setName: string;
   releaseDate: string | null;
   cardCount: number | null;
@@ -229,28 +306,49 @@ export async function lookupTcgMarketPrice(input: {
 }): Promise<TcgMarketLookupResponse> {
   if (!process.env.TCGAPI_KEY?.trim()) return { status: "missing-key", quote: null };
 
-  const sets = await fetchPokemonSets();
+  const [sets, setHint, cardHint] = await Promise.all([
+    fetchPokemonSets(),
+    resolveTcgdexSetHint(input.setName),
+    resolveTcgdexCardHint(input.cardId),
+  ]);
+
   let set = pickTcgSet(sets, {
-    name: input.setName,
-    releaseDate: input.releaseDate,
-    cardCount: input.cardCount,
+    name: setHint?.name ?? input.setName,
+    releaseDate: input.releaseDate ?? setHint?.releaseDate ?? null,
+    cardCount: input.cardCount ?? setHint?.cardCount ?? null,
   });
 
-  // Die Oberfläche arbeitet bevorzugt mit deutschen TCGdex-Namen. Falls die
-  // Metadaten nicht vom Client mitgegeben wurden, wird das Set über die
-  // deutsche TCGdex-Liste aufgelöst und mit dem englischen Namen erneut gesucht.
-  if (!set) {
-    const hint = await resolveTcgdexSetHint(input.setName);
-    if (hint) {
-      set = pickTcgSet(sets, {
-        name: hint.name,
-        releaseDate: input.releaseDate ?? hint.releaseDate,
-        cardCount: input.cardCount ?? hint.cardCount,
-      });
+  if (!set && setHint) {
+    set = pickTcgSet(sets, {
+      name: setHint.name,
+      releaseDate: setHint.releaseDate,
+      cardCount: setHint.cardCount,
+    });
+  }
+  if (!set) return { status: "set-not-found", quote: null };
+
+  if (cardHint) {
+    const searchRows = await searchTcgCards(cardHint.name, set.id);
+    const quote = pickTcgSearchQuote(searchRows, {
+      localId: cardHint.localId || input.localId,
+      englishName: cardHint.name,
+      finish: input.finish,
+    });
+    if (quote) return { status: "ready", quote };
+
+    const exactSearchCard = searchRows.find(
+      (candidate) =>
+        normalizeCardNumber(candidate.number) === normalizeCardNumber(input.localId) &&
+        normalizeComparableText(candidate.name) === normalizeComparableText(cardHint.name),
+    );
+    if (exactSearchCard) {
+      const prices = await fetchCardPrices(exactSearchCard.id);
+      const detailQuote = pickTcgPrice(prices, input.finish, exactSearchCard.tcgplayerUrl);
+      return detailQuote
+        ? { status: "ready", quote: detailQuote }
+        : { status: "price-not-found", quote: null };
     }
   }
-
-  if (!set) return { status: "set-not-found", quote: null };
 
   const cards = await fetchSetCards(set.id);
   const card = pickTcgCard(cards, input.localId);
