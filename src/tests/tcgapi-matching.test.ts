@@ -4,6 +4,7 @@ import {
   normalizeComparableText,
   pickTcgCard,
   pickTcgPrice,
+  pickTcgSearchCard,
   pickTcgSearchQuote,
   pickTcgSet,
 } from "@/lib/api/tcgapi-matching";
@@ -79,39 +80,83 @@ describe("TCG API Zuordnung", () => {
     expect(quote?.marketUsd).toBe(2);
   });
 
-  it("findet Inkay 051 in der Suche und ignoriert Sondervarianten", () => {
-    const quote = pickTcgSearchQuote(
+  it("findet Inkay 051 global ueber englischen Setnamen statt ueber eine Set-ID", () => {
+    const candidates = [
+      {
+        id: 20,
+        name: "Inkay",
+        number: "051/132",
+        setName: "Gym Heroes",
+        productType: "Cards",
+        tcgplayerUrl: "https://example.test/wrong",
+        printing: "Normal",
+        marketPrice: 5,
+        lowPrice: 4,
+        medianPrice: 5.5,
+        updatedAt: "2026-07-21",
+      },
+      {
+        id: 21,
+        name: "Inkay",
+        number: "051/084",
+        setName: "ME05: Pitch Black",
+        productType: "Cards",
+        tcgplayerUrl: "https://example.test/inkay",
+        printing: "Normal",
+        marketPrice: 0.1,
+        lowPrice: 0.08,
+        medianPrice: 0.12,
+        updatedAt: "2026-07-21",
+      },
+      {
+        id: 22,
+        name: "Inkay (Master Ball Pattern)",
+        number: "051/084",
+        setName: "ME05: Pitch Black",
+        productType: "Cards",
+        tcgplayerUrl: "https://example.test/pattern",
+        printing: "Foil",
+        marketPrice: 3,
+        lowPrice: 2.5,
+        medianPrice: 3.2,
+        updatedAt: "2026-07-21",
+      },
+    ];
+
+    const input = {
+      localId: "051",
+      englishName: "Inkay",
+      englishSetName: "ME05: Pitch Black",
+      finish: "normal" as const,
+    };
+    expect(pickTcgSearchCard(candidates, input)?.id).toBe(21);
+    expect(pickTcgSearchQuote(candidates, input)?.marketUsd).toBe(0.1);
+  });
+
+  it("akzeptiert Setnamen mit zusaetzlichem TCGPlayer-Praefix", () => {
+    const result = pickTcgSearchCard(
       [
         {
-          id: 1,
-          name: "Inkay (Poke Ball Pattern)",
-          number: "051/084",
-          productType: "Cards",
-          tcgplayerUrl: "https://example.test/pokeball",
-          printing: "Foil",
-          marketPrice: 2,
-          lowPrice: 1.5,
-          medianPrice: 2.2,
-          updatedAt: "2026-07-21",
-        },
-        {
-          id: 2,
+          id: 31,
           name: "Inkay",
           number: "051/084",
+          setName: "ME05: Pitch Black",
           productType: "Cards",
-          tcgplayerUrl: "https://example.test/normal",
+          tcgplayerUrl: null,
           printing: "Normal",
-          marketPrice: null,
-          lowPrice: 0.59,
+          marketPrice: 0.1,
+          lowPrice: null,
           medianPrice: null,
-          updatedAt: "2026-07-21",
+          updatedAt: null,
         },
       ],
-      { localId: "051", englishName: "Inkay", finish: "normal" },
+      {
+        localId: "051",
+        englishName: "Inkay",
+        englishSetName: "Pitch Black",
+        finish: "normal",
+      },
     );
-
-    expect(quote?.printing).toBe("Normal");
-    expect(quote?.lowUsd).toBe(0.59);
-    expect(quote?.tcgplayerUrl).toBe("https://example.test/normal");
+    expect(result?.id).toBe(31);
   });
 });
