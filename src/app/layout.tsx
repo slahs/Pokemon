@@ -4,66 +4,51 @@ import "./globals.css";
 import { APP_CONFIG } from "@/config/app-config";
 import { SettingsProvider } from "@/components/settings-context";
 import { AppLogo } from "@/components/ui/logo";
+import { NavLinks } from "@/components/ui/nav-links";
 
 export const metadata: Metadata = {
   title: `${APP_CONFIG.name} – Virtueller Pokémon-Booster-Simulator`,
   description: APP_CONFIG.description,
 };
 
-const NAV_ITEMS = [
-  { href: "/", label: "Booster öffnen" },
-  { href: "/#sets", label: "Sets" },
-  { href: "/session", label: "Session" },
-  { href: "/settings", label: "Einstellungen" },
-  { href: "/info", label: "Information" },
-];
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
       <body className="min-h-screen flex flex-col antialiased">
         <SettingsProvider>
-          <header className="sticky top-0 z-40 bg-ink-950/90 backdrop-blur border-b border-ink-700">
-            <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <header className="sticky top-0 z-40 border-b border-white/10 bg-[oklch(0.16_0.045_275/0.72)] backdrop-blur-[14px]">
+            <div className="mx-auto flex max-w-[1120px] flex-wrap items-center gap-5 px-4 py-[15px] sm:px-7">
               <Link
                 href="/"
-                className="flex items-center gap-2 text-lg font-semibold tracking-tight"
-                style={{ fontFamily: "var(--font-display)" }}
+                className="flex items-center gap-3 font-display text-xl font-extrabold tracking-[-0.02em]"
               >
-                <AppLogo size={24} />
+                <AppLogo />
                 {APP_CONFIG.name}
               </Link>
-              <nav aria-label="Hauptnavigation" className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                {NAV_ITEMS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="text-mist-300 hover:text-mist-100 py-2 transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+              <NavLinks />
             </div>
             <div className="foil-seam" aria-hidden="true" />
           </header>
 
-          <main className="flex-1">{children}</main>
+          <main className="relative z-[1] flex-1">{children}</main>
 
-          <footer className="border-t border-ink-700 mt-16">
-            <div className="mx-auto max-w-6xl px-4 py-8 text-xs text-mist-500 space-y-3">
+          <footer className="relative z-[1] mt-16 border-t border-white/10">
+            <div className="mx-auto max-w-[1120px] space-y-3 px-4 py-8 text-xs text-text-dim sm:px-7">
               <p>{APP_CONFIG.legalFooter}</p>
               <p>
-                Kartendaten und Marktpreise über die dokumentierte{" "}
+                Kartendaten, Setlogos, Karten- und Boosterbilder über die dokumentierte{" "}
                 <a
                   href="https://tcgdex.dev"
-                  className="underline hover:text-mist-300"
+                  className="text-accent-cyan hover:text-foil-300"
                   rel="noopener noreferrer"
                   target="_blank"
                 >
                   TCGdex-API
                 </a>
-                . <Link href="/info" className="underline hover:text-mist-300">Quellen und Hinweise</Link>
+                .{" "}
+                <Link href="/info" className="text-accent-cyan hover:text-foil-300">
+                  Quellen und Hinweise
+                </Link>
               </p>
             </div>
           </footer>

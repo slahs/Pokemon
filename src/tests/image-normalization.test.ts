@@ -5,7 +5,11 @@ import {
   normalizeCard,
   normalizeSetSummary,
 } from "@/lib/api/normalize";
-import type { TcgdexCardDetail, TcgdexSetBrief } from "@/lib/validation/tcgdex-schemas";
+import type {
+  TcgdexCardDetail,
+  TcgdexSetBrief,
+  TcgdexSetDetail,
+} from "@/lib/validation/tcgdex-schemas";
 
 describe("TCGdex image normalization", () => {
   it("builds card image variants from a base URL", () => {
@@ -51,5 +55,33 @@ describe("TCGdex image normalization", () => {
     expect(normalizedCard.imageHigh).toBe(`${image}/high.webp`);
     expect(normalizedCard.name).toBe("Tannza");
     expect(normalizedCard.language).toBe("de");
+  });
+
+  it("normalizes release order and official booster artwork", () => {
+    const set: TcgdexSetDetail = {
+      id: "sv04.5",
+      name: "Paldeas Schicksale",
+      cards: [],
+      boosters: [
+        {
+          id: "sv04.5-1",
+          name: "Mew",
+          artwork_front: "https://assets.tcgdex.net/de/sv/sv04.5/boosters/1/front",
+          artwork_back: "https://assets.tcgdex.net/de/sv/sv04.5/boosters/1/back",
+        },
+      ],
+    };
+
+    const normalized = normalizeSetSummary(set, "de", null, 3);
+    expect(normalized.releaseOrder).toBe(3);
+    expect(normalized.boosters).toEqual([
+      {
+        id: "sv04.5-1",
+        name: "Mew",
+        logo: null,
+        artworkFront: "https://assets.tcgdex.net/de/sv/sv04.5/boosters/1/front.webp",
+        artworkBack: "https://assets.tcgdex.net/de/sv/sv04.5/boosters/1/back.webp",
+      },
+    ]);
   });
 });

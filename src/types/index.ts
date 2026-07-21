@@ -51,6 +51,14 @@ export type NormalizedCard = {
   language: "de" | "en";
 };
 
+export type NormalizedBoosterArtwork = {
+  id: string;
+  name: string;
+  logo: string | null;
+  artworkFront: string | null;
+  artworkBack: string | null;
+};
+
 export type NormalizedSetSummary = {
   id: string;
   name: string;
@@ -61,6 +69,9 @@ export type NormalizedSetSummary = {
   logo: string | null;
   symbol: string | null;
   language: "de" | "en";
+  /** Reihenfolge der TCGdex-Setliste, 0 = neuestes Release. */
+  releaseOrder: number | null;
+  boosters: NormalizedBoosterArtwork[];
 };
 
 export type SetPoolResponse = {

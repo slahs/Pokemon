@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { formatDate } from "@/lib/calculations/format";
+import { loadSession } from "@/lib/storage/session-storage";
 
 type SetListItem = {
   id: string;
   name: string;
   serie: string;
   releaseDate: string | null;
+  releaseOrder: number | null;
   cardCountOfficial: number | null;
   cardCountTotal: number | null;
   logo: string | null;
@@ -18,7 +20,30 @@ type SetListItem = {
   profileName: string | null;
 };
 
-type SortMode = "new" | "old" | "alpha";
+type SortMode = "popular" | "new" | "old" | "alpha";
+
+const POPULAR_SET_IDS = [
+  "sv03.5",
+  "sv04.5",
+  "swsh7",
+  "swsh12.5",
+  "base1",
+  "base4",
+  "xy12",
+  "sm115",
+  "neo1",
+  "swsh9",
+  "swsh11",
+];
+const POPULARITY = new Map(
+  POPULAR_SET_IDS.map((id, index) => [id, POPULAR_SET_IDS.length - index]),
+);
+
+function releaseRank(set: SetListItem): number {
+  if (set.releaseOrder !== null) return set.releaseOrder;
+  if (set.releaseDate) return -Date.parse(set.releaseDate);
+  return Number.MAX_SAFE_INTEGER;
+}
 
 export function SetBrowser() {
   const [sets, setSets] = useState<SetListItem[] | null>(null);
@@ -28,6 +53,15 @@ export function SetBrowser() {
   const [year, setYear] = useState("all");
   const [sort, setSort] = useState<SortMode>("new");
   const [reloadKey, setReloadKey] = useState(0);
+  const [openCounts, setOpenCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const counts: Record<string, number> = {};
+    for (const booster of loadSession().boosters) {
+      counts[booster.setId] = (counts[booster.setId] ?? 0) + 1;
+    }
+    setOpenCounts(counts);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +87,7 @@ export function SetBrowser() {
   }, [reloadKey]);
 
   const series = useMemo(
-    () => [...new Set((sets ?? []).map((s) => s.serie))].sort(),
+    () => [...new Set((sets ?? []).map((s) => s.serie))].sort((a, b) => a.localeCompare(b, "de")),
     [sets],
   );
   const years = useMemo(
@@ -70,27 +104,33 @@ export function SetBrowser() {
 
   const filtered = useMemo(() => {
     let list = sets ?? [];
-    const q = search.trim().toLowerCase();
-    if (q) list = list.filter((s) => s.name.toLowerCase().includes(q));
+    const q = search.trim().toLocaleLowerCase("de");
+    if (q) list = list.filter((s) => `${s.name} ${s.serie}`.toLocaleLowerCase("de").includes(q));
     if (serie !== "all") list = list.filter((s) => s.serie === serie);
     if (year !== "all") list = list.filter((s) => s.releaseDate?.startsWith(year));
-    const byDate = (s: SetListItem) => s.releaseDate ?? "0000";
+
     return [...list].sort((a, b) => {
       if (sort === "alpha") return a.name.localeCompare(b.name, "de");
-      if (sort === "old") return byDate(a).localeCompare(byDate(b));
-      return byDate(b).localeCompare(byDate(a));
+      if (sort === "old") return releaseRank(b) - releaseRank(a);
+      if (sort === "new") return releaseRank(a) - releaseRank(b);
+
+      const score = (set: SetListItem) =>
+        (openCounts[set.id] ?? 0) * 1000 +
+        (POPULARITY.get(set.id) ?? 0) * 10 +
+        Math.max(0, 5 - Math.min(releaseRank(set), 5));
+      return score(b) - score(a) || releaseRank(a) - releaseRank(b);
     });
-  }, [sets, search, serie, year, sort]);
+  }, [sets, search, serie, year, sort, openCounts]);
 
   if (error) {
     return (
-      <div className="panel p-6 text-center" role="alert">
-        <p className="text-mist-100 font-medium">Sets konnten nicht geladen werden.</p>
-        <p className="text-mist-500 text-sm mt-1">{error}</p>
+      <div className="panel p-8 text-center" role="alert">
+        <p className="font-semibold">Sets konnten nicht geladen werden.</p>
+        <p className="mt-1 text-sm text-text-dim">{error}</p>
         <button
           type="button"
           onClick={() => setReloadKey((k) => k + 1)}
-          className="mt-4 rounded-lg bg-foil-400 text-ink-950 px-4 py-2.5 min-h-11 font-medium hover:bg-foil-300"
+          className="accent-button mt-5 min-h-11 px-5"
         >
           Erneut laden
         </button>
@@ -100,15 +140,15 @@ export function SetBrowser() {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-6">
-        <label className="flex-1 min-w-52">
+      <div className="mb-7 flex flex-wrap gap-3">
+        <label className="min-w-60 flex-1">
           <span className="sr-only">Set suchen</span>
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Set suchen …"
-            className="w-full rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 min-h-11 placeholder:text-mist-500"
+            placeholder="⌕  Set suchen …"
+            className="filter-control w-full placeholder:text-text-dim"
           />
         </label>
         <label>
@@ -116,7 +156,7 @@ export function SetBrowser() {
           <select
             value={serie}
             onChange={(e) => setSerie(e.target.value)}
-            className="rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 min-h-11"
+            className="filter-control"
           >
             <option value="all">Alle Serien</option>
             {series.map((s) => (
@@ -126,30 +166,33 @@ export function SetBrowser() {
             ))}
           </select>
         </label>
-        <label>
-          <span className="sr-only">Nach Jahr filtern</span>
-          <select
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            className="rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 min-h-11"
-          >
-            <option value="all">Alle Jahre</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
+        {years.length > 0 && (
+          <label>
+            <span className="sr-only">Nach Jahr filtern</span>
+            <select
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              className="filter-control"
+            >
+              <option value="all">Alle Jahre</option>
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           <span className="sr-only">Sortierung</span>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortMode)}
-            className="rounded-lg bg-ink-900 border border-ink-700 px-3 py-2.5 min-h-11"
+            className="filter-control"
           >
-            <option value="new">Neueste zuerst</option>
-            <option value="old">Älteste zuerst</option>
+            <option value="popular">Beliebteste</option>
+            <option value="new">Neueste Releases</option>
+            <option value="old">Älteste Releases</option>
             <option value="alpha">Alphabetisch</option>
           </select>
         </label>
@@ -157,63 +200,60 @@ export function SetBrowser() {
 
       {sets === null ? (
         <div
-          className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid grid-cols-1 gap-[18px] sm:grid-cols-2 lg:grid-cols-3"
           aria-busy="true"
           aria-label="Sets werden geladen"
         >
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="panel h-40 animate-pulse" />
+            <div key={i} className="panel h-60 animate-pulse" />
           ))}
         </div>
       ) : (
-        <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 list-none p-0">
-          {filtered.map((set) => (
-            <li key={set.id} className="panel p-4 flex flex-col gap-3">
-              <div className="h-14 flex items-center">
-                {set.logo ? (
-                  <Image
-                    src={set.logo}
-                    alt={`Logo des Sets ${set.name}`}
-                    width={140}
-                    height={52}
-                    className="h-12 w-auto object-contain"
-                    unoptimized
-                  />
-                ) : (
-                  <span className="text-mist-500 text-sm">Kein Logo</span>
-                )}
-              </div>
-              <div>
-                <h3 className="font-medium text-base leading-snug">{set.name}</h3>
-                <p className="text-sm text-mist-500 mt-0.5">
-                  {set.serie}
-                  {set.releaseDate ? ` · ${formatDate(set.releaseDate)}` : ""}
-                  {set.cardCountTotal ? ` · ${set.cardCountTotal} Karten` : ""}
-                </p>
-              </div>
-              <div className="mt-auto flex items-center justify-between gap-2">
-                {set.simulationAvailable ? (
-                  <>
-                    <span className="text-xs text-gain-400">✓ Simulation verfügbar</span>
-                    <Link
-                      href={`/simulator/${set.id}`}
-                      className="rounded-lg bg-foil-400 text-ink-950 px-3.5 py-2 min-h-11 inline-flex items-center font-medium text-sm hover:bg-foil-300"
-                    >
-                      Öffnen
-                    </Link>
-                  </>
-                ) : (
-                  <span className="text-xs text-warn-300">Profil noch nicht verfügbar</span>
-                )}
-              </div>
-            </li>
-          ))}
-          {filtered.length === 0 && (
-            <li className="panel p-6 text-mist-500 sm:col-span-2 lg:col-span-3">
-              Kein Set entspricht der aktuellen Suche. Suchbegriff oder Filter anpassen.
-            </li>
-          )}
-        </ul>
+        <>
+          <p className="mb-4 font-numeric text-xs text-text-dim">{filtered.length} Sets</p>
+          <ul className="grid list-none grid-cols-1 gap-[18px] p-0 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((set) => (
+              <li
+                key={set.id}
+                className="panel panel-hover flex min-h-60 flex-col overflow-hidden p-5"
+              >
+                <Link href={`/simulator/${set.id}`} className="flex h-full flex-col">
+                  <div className="mb-4 flex h-24 items-center justify-center rounded-2xl border border-white/14 bg-gradient-to-br from-[oklch(0.5_0.16_200/0.4)] to-[oklch(0.5_0.18_340/0.35)] px-4">
+                    {set.logo ? (
+                      <Image
+                        src={set.logo}
+                        alt={`Logo des Sets ${set.name}`}
+                        width={190}
+                        height={80}
+                        className="max-h-20 w-auto max-w-full object-contain drop-shadow-[0_3px_12px_oklch(0.12_0.05_285/0.7)]"
+                        unoptimized
+                      />
+                    ) : (
+                      <span className="font-display text-center text-xl font-extrabold">
+                        {set.name}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-display text-base font-bold leading-snug">{set.name}</h3>
+                  <p className="mt-1 font-numeric text-xs text-text-muted">
+                    {set.serie}
+                    {set.releaseDate ? ` · ${formatDate(set.releaseDate)}` : ""}
+                    {set.cardCountTotal ? ` · ${set.cardCountTotal} Karten` : ""}
+                  </p>
+                  <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+                    <span className="text-xs font-bold text-gain">● bereit</span>
+                    <span className="accent-button min-h-10 px-5 text-sm">Öffnen</span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+            {filtered.length === 0 && (
+              <li className="panel p-8 text-text-muted sm:col-span-2 lg:col-span-3">
+                Kein Set entspricht der aktuellen Suche.
+              </li>
+            )}
+          </ul>
+        </>
       )}
     </div>
   );

@@ -1,12 +1,17 @@
 import type {
   CardFinish,
+  NormalizedBoosterArtwork,
   NormalizedCard,
   NormalizedPrices,
   NormalizedSetSummary,
   PriceVariants,
 } from "@/types";
 import { canonicalizeRarity } from "@/lib/api/rarity";
-import type { TcgdexCardDetail, TcgdexSetBrief } from "@/lib/validation/tcgdex-schemas";
+import type {
+  TcgdexCardDetail,
+  TcgdexSetBrief,
+  TcgdexSetDetail,
+} from "@/lib/validation/tcgdex-schemas";
 
 /** Baut aus einer TCGdex-Bild-Basis-URL die konkrete WebP-Variante. */
 export function buildImageUrl(
@@ -112,20 +117,40 @@ export function normalizeCard(
   };
 }
 
+function normalizeBoosterArtwork(
+  booster: TcgdexSetDetail["boosters"][number],
+): NormalizedBoosterArtwork {
+  return {
+    id: booster.id,
+    name: booster.name,
+    logo: buildSetAssetUrl(booster.logo),
+    artworkFront: buildSetAssetUrl(booster.artwork_front),
+    artworkBack: buildSetAssetUrl(booster.artwork_back),
+  };
+}
+
 export function normalizeSetSummary(
-  set: TcgdexSetBrief,
+  set: TcgdexSetBrief | TcgdexSetDetail,
   language: "de" | "en",
-  fallbackMedia?: Pick<TcgdexSetBrief, "logo" | "symbol"> | null,
+  fallback?: Partial<TcgdexSetDetail> | null,
+  releaseOrder: number | null = null,
 ): NormalizedSetSummary {
+  const primaryBoosters = "boosters" in set ? set.boosters : [];
+  const boosters = primaryBoosters.length > 0 ? primaryBoosters : (fallback?.boosters ?? []);
+  const serie = set.serie ?? fallback?.serie;
+  const cardCount = set.cardCount ?? fallback?.cardCount;
+
   return {
     id: set.id,
     name: set.name,
-    serie: set.serie?.name ?? "Unbekannte Serie",
-    releaseDate: set.releaseDate ?? null,
-    cardCountOfficial: set.cardCount?.official ?? null,
-    cardCountTotal: set.cardCount?.total ?? null,
-    logo: buildSetAssetUrl(set.logo ?? fallbackMedia?.logo),
-    symbol: buildSetAssetUrl(set.symbol ?? fallbackMedia?.symbol),
+    serie: serie?.name ?? "Unbekannte Serie",
+    releaseDate: set.releaseDate ?? fallback?.releaseDate ?? null,
+    cardCountOfficial: cardCount?.official ?? null,
+    cardCountTotal: cardCount?.total ?? null,
+    logo: buildSetAssetUrl(set.logo ?? fallback?.logo),
+    symbol: buildSetAssetUrl(set.symbol ?? fallback?.symbol),
     language,
+    releaseOrder,
+    boosters: boosters.map(normalizeBoosterArtwork),
   };
 }

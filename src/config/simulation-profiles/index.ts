@@ -3,12 +3,14 @@ import { svStandardProfile } from "@/config/simulation-profiles/sv-standard";
 import { svSpecialProfile } from "@/config/simulation-profiles/sv-special";
 import { swshStandardProfile } from "@/config/simulation-profiles/swsh-standard";
 import { vintageProfile } from "@/config/simulation-profiles/vintage";
+import { genericProfile } from "@/config/simulation-profiles/generic";
 
 export const SIMULATION_PROFILES: SimulationProfile[] = [
   svSpecialProfile,
   svStandardProfile,
   swshStandardProfile,
   vintageProfile,
+  genericProfile,
 ];
 
 function matches(entry: string, setId: string): { exact: boolean; match: boolean } {
